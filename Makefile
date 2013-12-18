@@ -12,6 +12,7 @@
 # use make installDB to install a new and empty database (existing database will be deleted)
 #
 EXECDIR=/usr/bin
+RF24NETWORKDIR=${HOME}/RF24Network
 
 # The recommended compiler flags for the Raspberry Pi
 CCFLAGS=-Ofast -mfpu=vfp -mfloat-abi=hard -march=armv6zk -mtune=arm1176jzf-s
