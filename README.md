@@ -7,8 +7,8 @@ Still in an early state ... but working
 
 Environment:
 ============
-Server: Raspberry PI
-Nodes: "Arduino" like build with minimal cost based on ATmega328P 
+- Server: Raspberry PI
+- Nodes: "Arduino" like build with minimal cost based on ATmega328P 
 
 Aim of the project:
 ===================
