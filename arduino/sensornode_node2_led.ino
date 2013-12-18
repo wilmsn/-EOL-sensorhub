@@ -19,7 +19,7 @@ Danach wird diese Anforderung im Master gelöscht.
 #include <RF24.h>
 #include <SPI.h>
 #include <JeeLib.h>  // Include library containing low power functions
-#include "wetterstation.h"
+#include "sensornode.h"
 
 ISR(WDT_vect) { Sleepy::watchdogEvent(); } // Setup for low power waiting
 

@@ -34,4 +34,57 @@ node:
 
 Details:
 
------ to be done ---- 
+----- to be compleated ----
+
+Database structure:
+
+Table to entry data by the administrator:
+Table "Node"
+  Enter one line for each sensor. Remember one node can host several sensors.
+Column "Node"
+  Enter the address of the node.
+Column "Sensor"
+  Enter the address of the sensor.
+Column "Sensor_Type" 
+  Enter the type of the sensor.
+  Implemented types:
+  1   ==> One Value will be stored every hour in table "sensor". If the hub receives more than one value, the newer one will overwrite the older one.
+  2   ==> (not implemented) One Value will be stored every day in table "sensor". If the hub receives more than one value, the newer one will overwrite the older one.
+  10  ==> This sensor is a receiver. No value will be stored in table "sensor".
+
+Other Table, data will be entered by the software:
+Table "Sensor"
+  Will store historical Data from the sensors as configured in table "node"
+Column "Year" 
+  The year.
+Column "Month" 
+  The month.
+Column "Day" 
+  The day.
+Column "Hour" 
+  The hour if the sensor is type "1". If sensor is type "2" the value "0" will be stored.
+Column "Sensor" 
+  The number of the sensor.
+Column "Value" 
+  The value delivered by the sensor, always as float.
+
+Table "Sensor"
+  Will the last data received from any sensor that is configured in table "node"
+Column "Sensor" 
+  The number of the sensor.
+Column "Value" 
+  The value delivered by the sensor, always as float.
+Column "Timestamp"
+  The delivery time as GMT (one hour back to german time) 
+
+Table "Queue"
+  Will store the data to deliver to the sensor (type 10) until the delivery is commited by the sensor.
+  After the sensor sends a feedback (his number and the delivered value) the entry will be deleted.
+Column "Sensor" 
+  The number of the sensor.
+Column "Value" 
+  The value to delivered to the sensor, always as float.
+
+
+
+
