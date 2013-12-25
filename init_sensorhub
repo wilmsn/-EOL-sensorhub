@@ -48,6 +48,7 @@ case "$1" in
       log_end_msg 1
     fi
     echo "Delete logfile: /var/log/sensorhubd.log"
+    rm /var/log/sensorhubd.log
     echo -n "[....] Starting sensorhub "
     SENSORHUBPID=`ps -efa | grep "/usr/bin/sensorhubd" | grep -v grep | cut -c 9-15`
     if [ -z "$SENSORHUBPID" ]; then

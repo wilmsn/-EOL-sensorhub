@@ -18,10 +18,10 @@ if [ $ID = 0 ]; then
     mkdir /var/database
     chmod 755 /var/database
   fi
-  if [ ! -e /var/database/sensorwerte.db ]; then
-    echo "Copy empty database: sensorwerte.db ==> /var/database/sensorwerte.db"
-    cp ./sensorwerte.db /var/database/
-    chmod 644 /var/database/sensorwerte.db 
+  if [ ! -e /var/database/sensorhub.db ]; then
+    echo "Copy empty database: sensorhub.db ==> /var/database/sensorhub.db"
+    cp ./sensorhub.db /var/database/
+    chmod 644 /var/database/sensorhub.db 
   fi
   echo "Install as User Root";
   echo "copy sensorhubd ==> /usr/bin/sensorhubd"

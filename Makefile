@@ -30,7 +30,7 @@ database:
 
 # clear build files
 clean:
-	rm sensorhubd
+	rm sensorhubd sensorhub.db
 
 # Install the sensorhub
 install: 
@@ -38,5 +38,5 @@ install:
 
 # Install a new empty database
 installDB:
-	cp sensorwerte.db /var/database
+	cp sensorhub.db /var/database
 

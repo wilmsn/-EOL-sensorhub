@@ -1,9 +1,35 @@
+/*
+sensorhub.cpp
+A unix-deamon to handle and store the information from/to all connected sensornodes. 
+All information is stored in a SQLite3 database.
+
+Version history:
+V0.1: 
+Initial Version
+V0.2:
+Changed: time handling, table structures
+Added: Heartbeat (store the number of deliveries per hour)
+
+
+
+
+
+
+
+
+
+
+
+*/
+#define DEBUG 1
+#define DBNAME "/var/database/sensorhub.db"
+#define LOGFILE "/var/log/sensorhubd.log"
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
 #include <string> 
-#include "RF24.h"
-#include "RF24Network.h"
+#include <RF24.h>
+#include <RF24Network.h>
 #include <time.h>
 #include <stdio.h>
 #include <sqlite3.h>
@@ -15,40 +41,71 @@ RF24 radio(RPI_V2_GPIO_P1_22, BCM2835_SPI_CS0, BCM2835_SPI_SPEED_1MHZ);
 RF24Network network(radio);
 
 // Structure of our payload
-struct payload_t
-{
-  unsigned long sensor;
+struct payload_t {
+  uint16_t Jobno;
+  uint16_t seq; 
+  float value;
+};
+payload_t payload;
+
+// Structure to handle the orderqueue
+struct order_t {
+  uint16_t Jobno;
+  uint16_t seq; 
+  uint16_t to_node; 
+  unsigned char type; 
   float value;
 };
 
-//char *sql;
-int my_year, my_month;
-payload_t payload;
+int orderloopcount=0;
+int ordersqlexeccount=0;
+bool ordersqlrefresh=true;
+
+sqlite3 *db;
+sqlite3_stmt *stmt;   
+
+//int my_year, my_month;
+
+RF24NetworkHeader rxheader;
+RF24NetworkHeader txheader;
+
 char buffer1[50];
 char buffer2[50];
 char err_prepare[]="ERROR: Could not prepare SQL statement";
 char err_execute[]="ERROR: Could not execute SQL statement";
-char err_opendb[]="ERROR: Opening database: /var/database/sensorwerte.db !!!!!";
+char err_opendb[]="ERROR: Opening database: " DBNAME " !!!!!";
 char msg_startup[]="Startup sensorhubd";
 
-void logmsg(char *mymsg){
+bool logmsg(char *mymsg){
   FILE * pFile;
-  pFile = fopen ("/var/log/sensorhubd.log","a");
-  time_t rawtime;
-  struct tm * timeinfo;
-  char mytime [80];
-  time (&rawtime);
-  timeinfo = localtime (&rawtime);
-  strftime (mytime,80,"%F %T",timeinfo);
-  fprintf (pFile, "Sensorhubd: %s :", mytime );
-  fprintf (pFile, " %s \n", mymsg );
-  fclose (pFile);
+  bool exitcode=true; 
+  char buf[3];
+  pFile = fopen (LOGFILE,"a");
+  if (pFile!=NULL) {
+    time_t now = time(0);
+    tm *ltm = localtime(&now);
+    fprintf (pFile, "Sensorhubd: %d.", ltm->tm_year + 1900 );
+    if ( ltm->tm_mon + 1 < 10) sprintf(buf,"0%d",ltm->tm_mon + 1); else sprintf(buf,"%d",ltm->tm_mon + 1);
+    fprintf (pFile, "%s.", buf );
+    if ( ltm->tm_mday < 10) sprintf(buf,"0%d",ltm->tm_mday); else sprintf(buf,"%d",ltm->tm_mday);
+    fprintf (pFile, "%s ", buf );
+    if ( ltm->tm_hour < 10) sprintf(buf," %d",ltm->tm_hour); else sprintf(buf,"%d",ltm->tm_hour);
+    fprintf (pFile, "%s:", buf );
+    if ( ltm->tm_min < 10) sprintf(buf,"0%d",ltm->tm_min); else sprintf(buf,"%d",ltm->tm_min);
+    fprintf (pFile, "%s:", buf );
+    if ( ltm->tm_sec < 10) sprintf(buf,"0%d",ltm->tm_sec); else sprintf(buf,"%d",ltm->tm_sec);
+    fprintf (pFile, "%s : %s \n", buf, mymsg );
+    fclose (pFile);
+  } else {
+    exitcode = false;
+  }
+  return exitcode;
 }
 
 void log_sqlite3_errstr(int dbrc){
   char retval[80];    
   FILE * pFile;
-  pFile = fopen ("/var/log/sensorhubd.log","a");
+  pFile = fopen (LOGFILE,"a");
   switch (dbrc) {
     case 1:
       sprintf(retval,"SQLITE_ERROR:1: SQL error or missing database");
@@ -128,192 +185,262 @@ void log_sqlite3_errstr(int dbrc){
   fclose (pFile);
 }
 
-void senddata(unsigned long sensor, float value, uint16_t to_node) {
-//  radio.powerUp();
-  network.update();
-  payload.sensor = sensor;
-  payload.value = value;
-  RF24NetworkHeader header(to_node);
-  network.write(header,&payload,sizeof(payload));
-//  radio.powerDown();
+void do_sql(char *mysql) {
+  int rc;
+  rc = sqlite3_prepare(db, mysql, -1, &stmt, 0 ); 
+  if ( rc != SQLITE_OK) {
+    logmsg(err_prepare);
+    logmsg(mysql);
+    log_sqlite3_errstr(rc);
+  }
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    logmsg(err_execute);
+    logmsg(mysql);
+    log_sqlite3_errstr(rc);
+  }
+  rc=sqlite3_finalize(stmt);
+  if ( rc != SQLITE_OK) {
+    logmsg(err_prepare);
+    logmsg(mysql);
+    log_sqlite3_errstr(rc);
+  }
+}
+
+void del_messageentry(uint16_t Jobno, uint16_t seq) {
+  char sql_stmt[300];            
+  sprintf(sql_stmt, " delete from messagebuffer where Jobno = %u and seq = %u "
+                  , Jobno, seq );
+  do_sql(sql_stmt);
+  ordersqlrefresh=true;
+}
+
+void update_tab_sensor(unsigned long sens, float val, const char *ts) {
+  char sql_stmt[300];            
+  sprintf(sql_stmt, " update sensor set last_value = %f, last_ts = '%s' where sensoradr = %lu "
+                  , val, ts, sens);
+  do_sql(sql_stmt);
+}
+
+void update_tab_sensordata(int y, int m, int d, int h, unsigned long sens, float val) {
+  char sql_stmt[300];            
+  sprintf(sql_stmt,"insert or replace into sensordata (Year, Month, Day, Hour, Sensoradr, Value, heartbeatcount) values (%d,%d,%d,%d,%lu,%f,ifnull((select heartbeatcount+1 from sensordata where year =%d and month = %d and day = %d and hour = %d and sensoradr = %lu),1))"
+                  ,y,m,d,h,sens,val,y,m,d,h,sens);
+  do_sql(sql_stmt);
 }
 
 
-int main(int argc, char** argv)
-{
-  int loopcount=0;
-  FILE * pFile;
-  pFile = fopen ("/var/log/sensorhubd.log","a");
-  if (pFile==NULL)
-  {
-    printf("sensorhubd: Error opening logfile: /var/log/sebsorhubd.log\n");
+int getnodeadr(char *node) {
+  int mynodeadr = 0;
+  bool err = false;
+  char t[5];
+  for ( int i = 0; (node[i] > 0) && (! err); i++ ) {
+    if ( mynodeadr > 0 ) mynodeadr = (mynodeadr << 3);
+    sprintf(t,"%c",node[i]); 
+    mynodeadr = mynodeadr + atoi(t);
+    err = (node[i] == '6' || node[i] == '7' || node[i] == '8' || node[i] == '9' || (( i > 0 ) && ( node[i] == '0' ))); 
+  }
+  if (err) mynodeadr = 0;
+  return mynodeadr;
+}
+
+int getparentnodeadr(int nodeadr) {
+  int parentnodeadr=-1;
+  if ( nodeadr > 0x7FFF ) parentnodeadr = 0;
+  else if ( nodeadr > 7*8*8*8 ) parentnodeadr = (nodeadr & 0x0FFF);
+  else if ( nodeadr > 7*8*8 ) parentnodeadr = (nodeadr & 0x01FF);
+  else if ( nodeadr > 7*8 ) parentnodeadr = (nodeadr & 0x003F);
+  else if ( nodeadr > 7 ) parentnodeadr = (nodeadr & 0x0007);
+  else parentnodeadr = 0;
+  return parentnodeadr;
+}
+
+
+
+
+
+int main(int argc, char** argv) {
+  order_t order[5]; // we do not handle more than 5 orders at one time
+  if (! logmsg(msg_startup)) {
+    printf("sensorhubd: Error opening logfile: %s \n",LOGFILE);
     return 1;
   }
-  fclose (pFile);
-  logmsg(msg_startup);
   radio.begin();
-  radio.setDataRate(RF24_250KBPS);
   delay(5);
   network.begin( 90, 0);
   radio.setDataRate(RF24_250KBPS);
-  sqlite3 *db;
-  sqlite3_stmt *stmt;
   char sql_stmt[300];
-  int rc = sqlite3_open("/var/database/sensorwerte.db", &db);
+  int rc = sqlite3_open("/var/database/sensorhub.db", &db);
   if (rc) {
     logmsg (err_opendb);
   } else {
     while(1) {
       network.update();
-      while ( network.available() ) {
-        RF24NetworkHeader header;
-        network.peek(header);
-        network.read(header,&payload,sizeof(payload));
-        time_t now = time(0);
-        tm *ltm = localtime(&now);
-        my_year = ltm->tm_year + 1900;
-        my_month = ltm->tm_mon +1;
-        sprintf (sql_stmt, "select sensor_type from node where sensor = %lu ", payload.sensor);
-        rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
-        if ( rc != SQLITE_OK) {
-          logmsg(err_prepare);
-          logmsg(sql_stmt);
-          log_sqlite3_errstr(rc);
+      if ( network.available() ) {
+//
+// Receive loop: react on the message from the nodes
+//
+        network.read(rxheader,&payload,sizeof(payload));
+#ifdef DEBUG 
+        char debug[300];
+        sprintf(debug, "---Debug: Received: Type: %u from Node: %o to Node: %o Jobno %d Seq %d Value %f "
+                     , rxheader.type, rxheader.from_node, rxheader.to_node, payload.Jobno, payload.seq, payload.value);
+        logmsg(debug);
+#endif        
+        uint16_t sendernode=rxheader.from_node;
+        switch (rxheader.type) {
+
+          case 1: {
+            // Sensor 1
+#ifdef DEBUG 
+            sprintf(debug, "---Debug: Value of sensor 1 on Node: %o is %f ", sendernode, payload.value);
+            logmsg(debug);        
+#endif        
+            del_messageentry(payload.Jobno, payload.seq);  
+            break; }
+          case 2: {
+            // Sensor 2
+#ifdef DEBUG 
+            sprintf(debug, "---Debug: Value of sensor 2 on Node: %o is %f ", sendernode, payload.value);
+            logmsg(debug);        
+#endif        
+            del_messageentry(payload.Jobno, payload.seq);  
+            break; }
+          case 21: {
+            // Sensor 21
+#ifdef DEBUG 
+            sprintf(debug, "---Debug: Value of sensor 21 on Node: %o is %f ", sendernode, payload.value);
+            logmsg(debug);        
+#endif        
+            del_messageentry(payload.Jobno, payload.seq);  
+            break; }
+          case 101: {
+            // battery volatage
+#ifdef DEBUG 
+            sprintf(debug, "---Debug: Voltage of Node: %o is %f ", sendernode, payload.value);
+            logmsg(debug);        
+#endif        
+            del_messageentry(payload.Jobno, payload.seq);  
+
+            break; }
+          case 111: {
+#ifdef DEBUG 
+            sprintf(debug, "---Debug: Init of Node: %o finished: Sleeptime set to %f ", sendernode, payload.value);
+            logmsg(debug);        
+#endif        
+            del_messageentry(payload.Jobno, payload.seq);  
+            break; }
+          case 112: {
+            txheader.type=112;
+            bool radio_always_on = (payload.value >0.5);
+            network.write(txheader,&payload,sizeof(payload));
+#ifdef DEBUG 
+            if ( radio_always_on ) sprintf(debug, "---Debug: Radio allways on for Node: %o finished.", sendernode);
+            else sprintf(debug, "---Debug: Radio allways off for Node: %o finished.", sendernode);
+            logmsg(debug);        
+#endif        
+            del_messageentry(payload.Jobno, payload.seq);  
+            break;  }              
+          case 117: {
+#ifdef DEBUG 
+            sprintf(debug, "---Debug: Wake up of Node: %o finished.", sendernode);
+            logmsg(debug);        
+#endif        
+            del_messageentry(payload.Jobno, payload.seq);  
+
+            break; }
+          case 119: {
+            // Init sequence ma be changed individuelly by order
+            uint16_t sendernode=rxheader.from_node;
+            payload.value = 60000;
+            RF24NetworkHeader txheader(sendernode,111);
+            network.write(txheader,&payload,sizeof(payload));
+#ifdef DEBUG 
+            sprintf(debug, "---Debug: Send of Node: %o Type %d Value %f", sendernode, txheader.type, payload.value);
+            logmsg(debug);        
+#endif        
+            delay(100);
+            txheader.type=112;
+            payload.value = 0;
+            network.write(txheader,&payload,sizeof(payload));
+#ifdef DEBUG 
+            sprintf(debug, "---Debug: Send of Node: %o Type %d Value %f", sendernode, txheader.type, payload.value);
+            logmsg(debug);        
+#endif        
+            delay(100);
+            txheader.type=119;
+            network.write(txheader,&payload,sizeof(payload));
+#ifdef DEBUG 
+            sprintf(debug, "---Debug: Send of Node: %o Type %d Value %f", sendernode, txheader.type, payload.value);
+            logmsg(debug);        
+#endif        
+            break; }
+
+
         }
-        int sensor_type=-1;
-        if (sqlite3_step(stmt) == SQLITE_ROW) {
-          sensor_type  = sqlite3_column_int (stmt, 0);
-        }
-        rc=sqlite3_finalize(stmt);
-        if ( rc != SQLITE_OK) {
-          logmsg(err_prepare);
-          logmsg(sql_stmt);
-          log_sqlite3_errstr(rc);
-        }
-        switch (sensor_type) {
-          // This data will be stored (inserted or replaced) into database: One value per hour !!!!
-          case 1:  {    
-             sprintf(sql_stmt,"insert or replace into sensor (Year, Month, Day, Hour, Sensor, Value) values (%d,%d,%d,%d,%lu,%f)",my_year,my_month,ltm->tm_mday,ltm->tm_hour,payload.sensor,payload.value);
-             rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
-            if ( rc != SQLITE_OK) {
-              logmsg(err_prepare);
-              logmsg(sql_stmt);
-              log_sqlite3_errstr(rc);
-            }
-            if (sqlite3_step(stmt) != SQLITE_DONE) {
-              logmsg(err_execute);
-              logmsg(sql_stmt);
-              log_sqlite3_errstr(rc);
-            }
-            rc=sqlite3_finalize(stmt);
-            if ( rc != SQLITE_OK) {
-              logmsg(err_prepare);
-              logmsg(sql_stmt);
-              log_sqlite3_errstr(rc);
-            }
-            sprintf(sql_stmt, "insert or replace into sensor_now (Sensor, Value) values (%lu, %f)", payload.sensor, payload.value);
-            rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
-            if ( rc != SQLITE_OK) {
-              logmsg(err_prepare);
-              logmsg(sql_stmt);
-              log_sqlite3_errstr(rc);
-            }
-            if (sqlite3_step(stmt) != SQLITE_DONE) {
-              logmsg(err_execute);
-              logmsg(sql_stmt);
-              log_sqlite3_errstr(rc);
-            }
-            rc=sqlite3_finalize(stmt);
-            if ( rc != SQLITE_OK) {
-              logmsg(err_prepare);
-              logmsg(sql_stmt);
-              log_sqlite3_errstr(rc);
-            }
-            break;
+      } // network.available
+//
+// Orderloop: Tell the nodes what they have to do
+//
+      if ( orderloopcount > 10 ) {
+        if (ordersqlexeccount > 30 || ordersqlrefresh) {
+          // set all the Jobno to unused (-1) 
+          for (int i=0; i<5; i++) { order[i].Jobno = 0; }
+          sprintf (sql_stmt, "select Jobno, aseq, node, type, value from message2send LIMIT 5 ");
+          rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
+          if ( rc != SQLITE_OK) {
+            logmsg(err_prepare);
+            logmsg(sql_stmt);
+            log_sqlite3_errstr(rc);
           }
-          // Feedback from sensor ==> delete in Queue and save in Sensor_now !!!!! 
-          case 10:  {    
-            sprintf (buffer1, "INFO: Anntwort vom Sensor: %lu Wert: %f ", payload.sensor , payload.value);
-            logmsg(buffer1);
-            sprintf (sql_stmt, "delete from Queue where sensor = %lu ", payload.sensor);
-            rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
-            if ( rc != SQLITE_OK) {
-              logmsg(err_prepare);
-              logmsg(sql_stmt);
-              log_sqlite3_errstr(rc);
+          int i=0;
+          while (sqlite3_step(stmt) == SQLITE_ROW) {
+            if ( i < 5) {
+              order[i].Jobno = sqlite3_column_int (stmt, 0);
+              order[i].seq = sqlite3_column_int (stmt, 1);
+              char nodebuf[10];
+              sprintf(nodebuf,"%s",sqlite3_column_text (stmt, 2));
+              order[i].to_node  = getnodeadr(nodebuf);
+              order[i].type  = sqlite3_column_int (stmt, 3);
+              order[i].value = sqlite3_column_double (stmt, 4);
+              i++;
             }
-            if (sqlite3_step(stmt) != SQLITE_DONE) {
-              logmsg(err_execute);
-              logmsg(sql_stmt);
-              log_sqlite3_errstr(rc);
-            }
-            rc=sqlite3_finalize(stmt);
-            if ( rc != SQLITE_OK) {
-              logmsg(err_prepare);
-              logmsg(sql_stmt);
-              log_sqlite3_errstr(rc);
-            }
-            sprintf(sql_stmt, "insert or replace into sensor_now (Sensor, Value) values (%lu, %f)", payload.sensor, payload.value);
-            rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
-            if ( rc != SQLITE_OK) {
-              logmsg(err_prepare);
-              logmsg(sql_stmt);
-              log_sqlite3_errstr(rc);
-            }
-            if (sqlite3_step(stmt) != SQLITE_DONE) {
-              logmsg(err_execute);
-              logmsg(sql_stmt);
-              log_sqlite3_errstr(rc);
-            }
-            rc=sqlite3_finalize(stmt);
-            if ( rc != SQLITE_OK) {
-              logmsg(err_prepare);
-              logmsg(sql_stmt);
-              log_sqlite3_errstr(rc);
-            }
-            break;
           }
-          // handling for sensor_type is not defined 
-          default: {
-             if ( sensor_type == -1 ) {
-               sprintf(buffer1,"ERROR: Sensor: %lu not registered in Table NODE", payload.sensor);
-             } else {
-               sprintf(buffer1,"ERROR: Do know how to handle this Sensor Type: %d (Sensor: %lu)", sensor_type, payload.sensor);
-             }
-             logmsg(buffer1);
+          rc=sqlite3_finalize(stmt);
+          if ( rc != SQLITE_OK) {
+            logmsg(err_prepare);
+            logmsg(sql_stmt);
+            log_sqlite3_errstr(rc);
           }
-        } // switch
-      } // while   
-      // writing to the network 
-      if ( loopcount > 200 ) {
-        sprintf (sql_stmt, "select node.sensor, value, node.node from node, queue where node.sensor = queue.sensor");
-        rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
-        if ( rc != SQLITE_OK) {
-          logmsg(err_prepare);
-          logmsg(sql_stmt);
-          log_sqlite3_errstr(rc);
+          ordersqlexeccount=0;
+          ordersqlrefresh=false;
         }
-        while (sqlite3_step(stmt) == SQLITE_ROW) {
-          unsigned long sensor;
-          float value;
-          uint16_t to_node;
-          sensor  = sqlite3_column_int64 (stmt, 0);
-          value  = sqlite3_column_double (stmt, 1);
-          to_node = sqlite3_column_int (stmt, 2);
-          senddata(sensor, value, to_node);
-          sprintf (buffer1, "INFO: Gesendet: Sensor: %lu Wert: %f  Node: %u ", sensor, value, to_node);
-          logmsg(buffer1);
+        ordersqlexeccount++;
+        int i=0;
+        while (i<5) {
+          if (order[i].Jobno) {
+            txheader.from_node = 0;
+            payload.Jobno = order[i].Jobno;
+            payload.seq = order[i].seq;
+            txheader.to_node  = order[i].to_node;
+            txheader.type  = order[i].type;
+            payload.value = order[i].value;
+            network.write(txheader,&payload,sizeof(payload));
+#ifdef DEBUG 
+            char debug[300];
+            sprintf(debug, "---Debug: Send: Type: %u from Node: %o to Node: %o Jobno %d Seq %d Value %f "
+                         , txheader.type, txheader.from_node, txheader.to_node, payload.Jobno, payload.seq, payload.value);
+            logmsg(debug);       
+#endif        
+          }
+          i++; 
         }
-        rc=sqlite3_finalize(stmt);
-        if ( rc != SQLITE_OK) {
-          logmsg(err_prepare);
-          logmsg(sql_stmt);
-          log_sqlite3_errstr(rc);
-        }
-        loopcount=0;
-      }
-      loopcount++;
-      delay(10);
+        orderloopcount=0;
+      } // /orderloopcount
+      orderloopcount++;
+//
+//  end orderloop 
+//
+      if (! order[0].Jobno) usleep(100000);
     } // while(1)
   } 
   return 0;
