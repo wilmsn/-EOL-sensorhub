@@ -13,7 +13,7 @@ my @unit=$q->param("unit");
 my @dezimal=$q->param("dezimal");
 
 
-my $sth = $dbh->prepare("SELECT last_value FROM sensor where sensoradr = $sensor_nr[0] LIMIT 1");
+my $sth = $dbh->prepare("SELECT last_value FROM sensor where sensor = $sensor_nr[0] LIMIT 1");
 $sth->execute();
 my @row = $sth->fetchrow_array();
 $sth->finish();

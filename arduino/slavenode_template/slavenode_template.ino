@@ -16,11 +16,11 @@ Look for this lines: //****
 // The pin of the statusled
 #define STATUSLED A1
 // The outputpin for batterycontrol for the voltagedivider
-#define VMESS_OUT A4
+#define VMESS_OUT 14
 // Zhe inputpin for batterycontrol
-#define VMESS_IN A3
+#define VMESS_IN A0
 // the divider to get the real voltage from ADC
-#define VOLTAGEDIVIDER 1600
+#define VOLTAGEDIVIDER 1880
 
 // ------ End of configuration part ------------
 
@@ -197,6 +197,12 @@ void loop(void) {
         txheader.type=9;
         //****
         // insert here: payload.value=[result from sensor] 
+        network.write(txheader,&payload,sizeof(payload));
+       break;
+      case 21:
+        txheader.type=21;
+        //****
+        // insert here: action = payload.value
         network.write(txheader,&payload,sizeof(payload));
        break;
       case 101:  
