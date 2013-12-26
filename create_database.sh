@@ -7,36 +7,30 @@ if [ -e $DB ]; then
 fi  
 sqlite3 $DB <<EOF
 create table Node 
-       (Nodeadr INT, Battery_Sensoradr INT, Battery_UN FLOAT, Battery_UE FLOAT, Location TEXT, 
-       PRIMARY KEY (Nodeadr));
+       (Node TEXT, Battery_UN FLOAT, Battery_UE FLOAT, Location TEXT, 
+       PRIMARY KEY (Node));
+
 create table sensor 
-       (Nodeadr INT, Sensoradr INT, Sensortype INT, Last_Value FLOAT, Last_TS TEXT, Sensorinfo TEXT, Nominal_Heartbeat INT,
-       PRIMARY KEY (Sensoradr));
+       (Sensor INT, Sensorinfo TEXT, Node TEXT, Channel INT, Last_Value FLOAT, Last_TS TEXT,
+       PRIMARY KEY (Sensor));
+
 create table sensordata 
-       (Year INT, Month INT, Day INT, Hour INT, Sensoradr INT, Value FLOAT, Heartbeatcount INT,
-       PRIMARY KEY (Year, Month, Day, Hour, Sensoradr));
-create table Queue (Sensoradr INT, Value FLOAT, 
-       PRIMARY KEY (Sensoradr));
-
-
-
-
+       (Sensor INT, Year INT, Month INT, Day INT, Hour INT, Value FLOAT,
+       PRIMARY KEY (Year, Month, Day, Hour, Sensor));
 
 CREATE TABLE job 
-       ( jobno INT, seq INT, node TEXT, type INT, value FLOAT,  
+       ( jobno INT, seq INT, node TEXT, channel INT, value FLOAT,  
        PRIMARY KEY ( jobno, seq ));
 
-CREATE TABLE schedule (jobno int, value real, start , interval, primary key (jobno));
-
-
+CREATE TABLE schedule (jobno int, Start, Nextstart INT, primary key (jobno));
 
 CREATE TABLE messagebuffer 
-       ( jobno INT, seq INT, status INT DEFAULT 0, node TEXT, type INT, value FLOAT,  
+       ( jobno INT, seq INT, node TEXT, channel INT, value FLOAT,  
        PRIMARY KEY ( jobno, seq ));
 
 CREATE VIEW message2send
-       as select jobno, min(seq) as aseq, node, type, value from messagebuffer 
-       where status = 0 group by jobno;
+       as select jobno, min(seq) as aseq, node, channel, value from messagebuffer 
+       group by jobno;
 
 EOF
 

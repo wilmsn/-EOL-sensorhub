@@ -6,10 +6,13 @@ All information is stored in a SQLite3 database.
 Version history:
 V0.1: 
 Initial Version
+Node sends its information activ to the master
+Master is only receiver
 V0.2:
-Changed: time handling, table structures
-Added: Heartbeat (store the number of deliveries per hour)
-
+Changed the delivery
+Master takes control over everything
+Node wakes up in a defined interval and listens into the network for something to do
+Database structure changed - not comüatible with V0.1 
 
 
 
@@ -24,6 +27,12 @@ Added: Heartbeat (store the number of deliveries per hour)
 #define DEBUG 1
 #define DBNAME "/var/database/sensorhub.db"
 #define LOGFILE "/var/log/sensorhubd.log"
+#define ERRSTR "ERROR: "
+#define DEBUGSTR "Debug: "
+
+//--------- End of global define -----------------
+
+
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
@@ -53,7 +62,7 @@ struct order_t {
   uint16_t Jobno;
   uint16_t seq; 
   uint16_t to_node; 
-  unsigned char type; 
+  unsigned char channel; 
   float value;
 };
 
@@ -64,16 +73,14 @@ bool ordersqlrefresh=true;
 sqlite3 *db;
 sqlite3_stmt *stmt;   
 
-//int my_year, my_month;
-
 RF24NetworkHeader rxheader;
 RF24NetworkHeader txheader;
 
 char buffer1[50];
 char buffer2[50];
-char err_prepare[]="ERROR: Could not prepare SQL statement";
-char err_execute[]="ERROR: Could not execute SQL statement";
-char err_opendb[]="ERROR: Opening database: " DBNAME " !!!!!";
+char err_prepare[]=ERRSTR "Could not prepare SQL statement";
+char err_execute[]=ERRSTR "Could not execute SQL statement";
+char err_opendb[]=ERRSTR "Opening database: " DBNAME " failed !!!!!";
 char msg_startup[]="Startup sensorhubd";
 
 bool logmsg(char *mymsg){
@@ -211,23 +218,33 @@ void del_messageentry(uint16_t Jobno, uint16_t seq) {
   sprintf(sql_stmt, " delete from messagebuffer where Jobno = %u and seq = %u "
                   , Jobno, seq );
   do_sql(sql_stmt);
+#ifdef DEBUG 
+  logmsg(sql_stmt);
+#endif
   ordersqlrefresh=true;
 }
 
-void update_tab_sensor(unsigned long sens, float val, const char *ts) {
-  char sql_stmt[300];            
-  sprintf(sql_stmt, " update sensor set last_value = %f, last_ts = '%s' where sensoradr = %lu "
-                  , val, ts, sens);
-  do_sql(sql_stmt);
-}
 
-void update_tab_sensordata(int y, int m, int d, int h, unsigned long sens, float val) {
+void store_value(uint16_t jobno, uint16_t seq, float val) {
   char sql_stmt[300];            
-  sprintf(sql_stmt,"insert or replace into sensordata (Year, Month, Day, Hour, Sensoradr, Value, heartbeatcount) values (%d,%d,%d,%d,%lu,%f,ifnull((select heartbeatcount+1 from sensordata where year =%d and month = %d and day = %d and hour = %d and sensoradr = %lu),1))"
-                  ,y,m,d,h,sens,val,y,m,d,h,sens);
+  sprintf(sql_stmt,"insert or replace into sensordata (sensor, year, month, day, hour, value) "
+                   "select a.sensor, "
+                   "strftime('%%Y', datetime('now','localtime')), strftime('%%m', datetime('now','localtime')), "
+                   "strftime('%%d', datetime('now','localtime')), strftime('%%H', datetime('now','localtime')), %f "
+                   " from sensor a, job b "
+                   "where b.jobno = %u and b.seq = %u and a.node = b.node and a.channel = b.channel ", val, jobno, seq);
+#ifdef DEBUG 
+  logmsg(sql_stmt);
+#endif
   do_sql(sql_stmt);
+  sprintf(sql_stmt,"update sensor set last_value = %f, last_TS = datetime('now', 'localtime') "
+                   " where Node = (select node from job where jobno = %u and seq = %u) "
+                   " and channel = (select channel from job where jobno = %u and seq = %u)", val, jobno, seq, jobno, seq);
+  do_sql(sql_stmt);
+#ifdef DEBUG 
+  logmsg(sql_stmt);
+#endif
 }
-
 
 int getnodeadr(char *node) {
   int mynodeadr = 0;
@@ -255,9 +272,6 @@ int getparentnodeadr(int nodeadr) {
 }
 
 
-
-
-
 int main(int argc, char** argv) {
   order_t order[5]; // we do not handle more than 5 orders at one time
   if (! logmsg(msg_startup)) {
@@ -273,6 +287,7 @@ int main(int argc, char** argv) {
   if (rc) {
     logmsg (err_opendb);
   } else {
+    long int time_old=0;
     while(1) {
       network.update();
       if ( network.available() ) {
@@ -282,49 +297,36 @@ int main(int argc, char** argv) {
         network.read(rxheader,&payload,sizeof(payload));
 #ifdef DEBUG 
         char debug[300];
-        sprintf(debug, "---Debug: Received: Type: %u from Node: %o to Node: %o Jobno %d Seq %d Value %f "
+        sprintf(debug, DEBUGSTR "Received: Channel: %u from Node: %o to Node: %o Jobno %d Seq %d Value %f "
                      , rxheader.type, rxheader.from_node, rxheader.to_node, payload.Jobno, payload.seq, payload.value);
         logmsg(debug);
 #endif        
         uint16_t sendernode=rxheader.from_node;
         switch (rxheader.type) {
 
-          case 1: {
+          case 1 ... 99: {
             // Sensor 1
 #ifdef DEBUG 
-            sprintf(debug, "---Debug: Value of sensor 1 on Node: %o is %f ", sendernode, payload.value);
+            sprintf(debug, DEBUGSTR "Value of sensor 1 on Node: %o is %f ", sendernode, payload.value);
             logmsg(debug);        
 #endif        
             del_messageentry(payload.Jobno, payload.seq);  
+            store_value(payload.Jobno, payload.seq, payload.value); 
             break; }
-          case 2: {
-            // Sensor 2
-#ifdef DEBUG 
-            sprintf(debug, "---Debug: Value of sensor 2 on Node: %o is %f ", sendernode, payload.value);
-            logmsg(debug);        
-#endif        
-            del_messageentry(payload.Jobno, payload.seq);  
-            break; }
-          case 21: {
-            // Sensor 21
-#ifdef DEBUG 
-            sprintf(debug, "---Debug: Value of sensor 21 on Node: %o is %f ", sendernode, payload.value);
-            logmsg(debug);        
-#endif        
-            del_messageentry(payload.Jobno, payload.seq);  
-            break; }
+
+
           case 101: {
             // battery volatage
 #ifdef DEBUG 
-            sprintf(debug, "---Debug: Voltage of Node: %o is %f ", sendernode, payload.value);
+            sprintf(debug, DEBUGSTR "Voltage of Node: %o is %f ", sendernode, payload.value);
             logmsg(debug);        
 #endif        
             del_messageentry(payload.Jobno, payload.seq);  
-
+            store_value(payload.Jobno, payload.seq, payload.value); 
             break; }
           case 111: {
 #ifdef DEBUG 
-            sprintf(debug, "---Debug: Init of Node: %o finished: Sleeptime set to %f ", sendernode, payload.value);
+            sprintf(debug, DEBUGSTR "Init of Node: %o finished: Sleeptime set to %f ", sendernode, payload.value);
             logmsg(debug);        
 #endif        
             del_messageentry(payload.Jobno, payload.seq);  
@@ -342,7 +344,7 @@ int main(int argc, char** argv) {
             break;  }              
           case 117: {
 #ifdef DEBUG 
-            sprintf(debug, "---Debug: Wake up of Node: %o finished.", sendernode);
+            sprintf(debug, DEBUGSTR "Wake up of Node: %o finished.", sendernode);
             logmsg(debug);        
 #endif        
             del_messageentry(payload.Jobno, payload.seq);  
@@ -355,7 +357,7 @@ int main(int argc, char** argv) {
             RF24NetworkHeader txheader(sendernode,111);
             network.write(txheader,&payload,sizeof(payload));
 #ifdef DEBUG 
-            sprintf(debug, "---Debug: Send of Node: %o Type %d Value %f", sendernode, txheader.type, payload.value);
+            sprintf(debug, DEBUGSTR "Send of Node: %o Channel %u Value %f", sendernode, txheader.type, payload.value);
             logmsg(debug);        
 #endif        
             delay(100);
@@ -363,29 +365,62 @@ int main(int argc, char** argv) {
             payload.value = 0;
             network.write(txheader,&payload,sizeof(payload));
 #ifdef DEBUG 
-            sprintf(debug, "---Debug: Send of Node: %o Type %d Value %f", sendernode, txheader.type, payload.value);
+            sprintf(debug, DEBUGSTR "Send of Node: %o Channel %u Value %f", sendernode, txheader.type, payload.value);
             logmsg(debug);        
 #endif        
             delay(100);
             txheader.type=119;
             network.write(txheader,&payload,sizeof(payload));
 #ifdef DEBUG 
-            sprintf(debug, "---Debug: Send of Node: %o Type %d Value %f", sendernode, txheader.type, payload.value);
+            sprintf(debug, DEBUGSTR "Send of Node: %o Channel %u Value %f", sendernode, txheader.type, payload.value);
             logmsg(debug);        
 #endif        
             break; }
-
-
         }
       } // network.available
 //
+// Dispatcher: Look if the is anything to scedule
+//
+      if ( time(0) > time_old + 59 ) {  // check every minute if we have jobs to scedule
+        time_old = time(0);
+//
+// Case 1: Jobs that run at a scheduled time (start) and run only once (interval = -1)
+//
+        sprintf (sql_stmt, "insert into messagebuffer (jobno,seq,node,channel,value)"
+                 " select a.jobno, a.seq, a.node, a.channel, a.value from job a, schedule b "
+                 "  where a.jobno = b.jobno and (datetime(b.start) <= datetime('now','localtime') or start = -1) and interval = -1 ");
+        do_sql(sql_stmt);
+        sprintf (sql_stmt, "delete from schedule where datetime(start) <= datetime('now','localtime') and interval = -1 "); 
+        do_sql(sql_stmt);
+//
+// Case 2: Jobs that start immeadeately (start = -1) and run every <interval> minutes
+//
+        sprintf (sql_stmt, "insert into messagebuffer (jobno,seq,node,channel,value)"
+                 " select a.jobno, a.seq, a.node, a.channel, a.value from job a, schedule b where a.jobno = b.jobno and b.start = -1 ");
+        do_sql(sql_stmt);
+        sprintf (sql_stmt, "update schedule set start = datetime(start, '+'||interval||' minutes') where start = -1"); 
+        do_sql(sql_stmt);
+//
+// Case 3: Jobs that run frequently - increment "start" by "interval" minutes 
+//
+        sprintf (sql_stmt, "insert into messagebuffer (jobno,seq,node,channel,value)"
+                 " select a.jobno, a.seq, a.node, a.channel, a.value from job a, schedule b "
+                 "  where a.jobno = b.jobno and datetime(b.start) <= datetime('now','localtime') and interval > 0 ");
+        do_sql(sql_stmt);
+        sprintf (sql_stmt, "update schedule set start = datetime(start, '+'||interval||' minutes') "
+                           "where datetime(start) <= datetime('now','localtime') and interval > 0 "); 
+        do_sql(sql_stmt);
+        orderloopcount=0;
+        ordersqlrefresh=true;
+      }
+//
 // Orderloop: Tell the nodes what they have to do
 //
-      if ( orderloopcount > 10 ) {
+      if ( orderloopcount == 0 ) {
         if (ordersqlexeccount > 30 || ordersqlrefresh) {
           // set all the Jobno to unused (-1) 
           for (int i=0; i<5; i++) { order[i].Jobno = 0; }
-          sprintf (sql_stmt, "select Jobno, aseq, node, type, value from message2send LIMIT 5 ");
+          sprintf (sql_stmt, "select Jobno, aseq, node, channel, value from message2send LIMIT 5 ");
           rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
           if ( rc != SQLITE_OK) {
             logmsg(err_prepare);
@@ -400,7 +435,7 @@ int main(int argc, char** argv) {
               char nodebuf[10];
               sprintf(nodebuf,"%s",sqlite3_column_text (stmt, 2));
               order[i].to_node  = getnodeadr(nodebuf);
-              order[i].type  = sqlite3_column_int (stmt, 3);
+              order[i].channel  = sqlite3_column_int (stmt, 3);
               order[i].value = sqlite3_column_double (stmt, 4);
               i++;
             }
@@ -422,21 +457,22 @@ int main(int argc, char** argv) {
             payload.Jobno = order[i].Jobno;
             payload.seq = order[i].seq;
             txheader.to_node  = order[i].to_node;
-            txheader.type  = order[i].type;
+            txheader.type  = order[i].channel;
             payload.value = order[i].value;
             network.write(txheader,&payload,sizeof(payload));
 #ifdef DEBUG 
             char debug[300];
-            sprintf(debug, "---Debug: Send: Type: %u from Node: %o to Node: %o Jobno %d Seq %d Value %f "
+            sprintf(debug, DEBUGSTR "Send: Channel: %u from Node: %o to Node: %o Jobno %d Seq %d Value %f "
                          , txheader.type, txheader.from_node, txheader.to_node, payload.Jobno, payload.seq, payload.value);
             logmsg(debug);       
 #endif        
           }
           i++; 
         }
-        orderloopcount=0;
       } // /orderloopcount
       orderloopcount++;
+      if ( orderloopcount > 200 ) {  orderloopcount=0; }
+      usleep(1000); 
 //
 //  end orderloop 
 //

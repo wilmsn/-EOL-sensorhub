@@ -89,7 +89,7 @@ sub get_vals {
   my @row=();
   my @vals=();
   @hours=();
-  my $sth = $dbh->prepare("SELECT Value, Year, Month, Day, Hour FROM sensordata where sensoradr= $sensor order by Year DESC, Month DESC, Day DESC, Hour DESC LIMIT 24");
+  my $sth = $dbh->prepare("SELECT Value, Year, Month, Day, Hour FROM sensordata where sensor= $sensor order by Year DESC, Month DESC, Day DESC, Hour DESC LIMIT 24");
   $sth->execute();
   while (@row = $sth->fetchrow_array()) {
     push(@vals,$row[0]);
@@ -97,19 +97,6 @@ sub get_vals {
   }
   $sth->finish();
   return @vals;
-}
-
-sub get_hours {
-  my $sensor=$_[0];
-  my @row=();
-  my @hours=();
-  my $sth = $dbh->prepare("SELECT Value, Year, Month, Day, Hour FROM sensor where sensor= $sensor order by Year DESC, Month DESC, Day DESC, Hour DESC LIMIT 24");
-  $sth->execute();
-  while (@row = $sth->fetchrow_array()) {
-    push(@hours,$row[4]);
-  }
-  $sth->finish();
-  return @hours;
 }
 
 sub get_minmax {
