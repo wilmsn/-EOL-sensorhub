@@ -395,37 +395,64 @@ int main(int argc, char** argv) {
 //
         sprintf (sql_stmt, "insert into messagebuffer (jobno,seq,node,channel,value)"
                  " select a.jobno, a.seq, a.node, a.channel, a.value from job_v a, schedule b "
-                 "  where a.jobno = b.jobno and start = -1 and interval = -1 ");
+                 "  where a.jobno = b.jobno and start = '-1' and interval = -1 ");
+#ifdef DEBUG 
+        logmsg(sql_stmt);        
+#endif        
         do_sql(sql_stmt);
-        sprintf (sql_stmt, "delete from schedule where start = -1 and interval = -1 "); 
+        sprintf (sql_stmt, "delete from schedule where start = '-1' and interval = -1 "); 
+#ifdef DEBUG 
+        logmsg(sql_stmt);        
+#endif        
         do_sql(sql_stmt);
 //
 // Case 2: Jobs that run at a scheduled time (start) and run only once (interval = -1)
 //
         sprintf (sql_stmt, "insert into messagebuffer (jobno,seq,node,channel,value)"
                  " select a.jobno, a.seq, a.node, a.channel, a.value from job_v a, schedule b "
-                 "  where a.jobno = b.jobno and (datetime(b.start) <= datetime('now','localtime') or start = -1) and interval = -1 ");
+                 "  where a.jobno = b.jobno and datetime(b.start) <= datetime('now','localtime') and interval = -1 ");
+#ifdef DEBUG 
+        logmsg(sql_stmt);        
+#endif        
         do_sql(sql_stmt);
-        sprintf (sql_stmt, "delete from schedule where start > -1 and datetime(start) <= datetime('now','localtime') and interval = -1 "); 
+        sprintf (sql_stmt, "delete from schedule where start != '-1' and datetime(start) <= datetime('now','localtime') and interval = -1 "); 
+#ifdef DEBUG 
+        logmsg(sql_stmt);        
+#endif        
         do_sql(sql_stmt);
 //
 // Case 3: Jobs that start immeadeately (start = -1) and run every <interval> minutes
 // 
         sprintf (sql_stmt, "insert into messagebuffer (jobno,seq,node,channel,value)"
-                 " select a.jobno, a.seq, a.node, a.channel, a.value from job_v a, schedule b where a.jobno = b.jobno and b.start = -1 ");
+                 " select a.jobno, a.seq, a.node, a.channel, a.value from job_v a, schedule b where a.jobno = b.jobno and b.start = '-1' ");
+#ifdef DEBUG 
+        logmsg(sql_stmt);        
+#endif        
         do_sql(sql_stmt);
-        sprintf (sql_stmt, "update schedule set start = datetime(start, '+'||interval||' minutes') where start = -1 and interval > 0 "); 
+        sprintf (sql_stmt, "update schedule set start = datetime('now', 'localtime', '+'||interval||' minutes') where start = '-1' and interval > 0 "); 
+#ifdef DEBUG 
+        logmsg(sql_stmt);        
+#endif        
         do_sql(sql_stmt);
 //
 // Case 4: Jobs that run frequently - increment "start" by "interval" minutes 
-//
+// 
         sprintf (sql_stmt, "insert into messagebuffer (jobno,seq,node,channel,value)"
                  " select a.jobno, a.seq, a.node, a.channel, a.value from job_v a, schedule b "
                  "  where a.jobno = b.jobno and datetime(b.start) <= datetime('now','localtime') and interval > 0 ");
+#ifdef DEBUG 
+        logmsg(sql_stmt);        
+#endif        
         do_sql(sql_stmt);
         sprintf (sql_stmt, "update schedule set start = datetime(start, '+'||interval||' minutes') "
                            "where datetime(start) <= datetime('now','localtime') and interval > 0 "); 
+#ifdef DEBUG 
+        logmsg(sql_stmt);        
+#endif        
         do_sql(sql_stmt);
+//
+// End Dispatcher
+//
         orderloopcount=0;
         ordersqlrefresh=true;
       }

@@ -30,17 +30,17 @@ sub td_input_select {
   my @myoptname=@{$_[4]};
   my $i=0;
   my $string;
-  my $mystr="<td>&nbsp;<select name='$_[0]' size='1' class='$_[2]'>";
+  my $mystr="<td>&nbsp;<select name='$_[0]' size='1' class='$_[2]'>\n";
   if ($_[1] eq "") {
-    $mystr=$mystr."<option value='-' selected>----</option>";
+    $mystr=$mystr."<option value='-' selected>----</option>\n";
     foreach $string (@myopt) {
-      $mystr=$mystr."<option value='$string'>$myoptname[$i]</option>";
+      $mystr=$mystr."<option value='$string'>$myoptname[$i]</option>\n";
       $i++;
     }
   } else {
     foreach $string (@myopt) {
-      if ($string eq $_[1]){$mystr=$mystr."<option value='$string' selected>$myoptname[$i]</option>";}
-      else {$mystr=$mystr."<option value='$string'>$myoptname[$i]</option>";}
+      if ($string eq $_[1]){$mystr=$mystr."<option value='$string' selected>$myoptname[$i]</option>\n";}
+      else {$mystr=$mystr."<option value='$string'>$myoptname[$i]</option>\n";}
       $i++;
     }
   }
@@ -58,7 +58,7 @@ sub th {
 }
 
 sub start_form {
-  return "<Form $formparam><input type='hidden' name='action' value='$_[0]'>\n";
+  return "<Form $formparam>\n<input type='hidden' name='action' value='$_[0]'>\n";
 }
 
 sub end_form {
@@ -109,7 +109,6 @@ elsif($action eq "delete_node") {
 elsif($action eq "new_node") {
   $sql_stmt = "insert into NODE (Node,Nodename,Battery_UN,Battery_UE,Location) values ('" .
               $q->param('NODE'). "', '".$q->param('NODENAME')."', ".$q->param('UBATTS').", ".$q->param('UBATTE'). ",'".$q->param('LOC')."')"; 
-  print "$sql_stmt <br>\n";
   $sth = $dbh->prepare($sql_stmt);
   $sth->execute(); 
   $sth->finish();
@@ -118,7 +117,6 @@ elsif($action eq "new_node") {
 elsif($action eq "update_sensor") {
   $sql_stmt = "update sensor set Sensorinfo = '" . $q->param('SENSORI') . "', Node = '". $q->param('NODE').
               "', Channel = " . $q->param('CHANNEL') . " where sensor = " . $q->param('SENSOR') . " ";
-  print "$sql_stmt <br>\n";
   $sth = $dbh->prepare($sql_stmt);
   $sth->execute(); 
   $sth->finish();
@@ -134,7 +132,6 @@ elsif($action eq "delete_sensor") {
   } else {
     $sth->finish();
     $sql_stmt = "delete from SENSOR where SENSOR = '" . $q->param('SENSOR') . "'"; 
-    print "$sql_stmt <br>\n";
     $sth = $dbh->prepare($sql_stmt);
     $sth->execute();
     write_info("Sensor ".$q->param('SENSOR')." gel&ouml;scht! ");
@@ -142,7 +139,6 @@ elsif($action eq "delete_sensor") {
   $sth->finish();
 } 
 elsif($action eq "new_sensor") {
-  print "New Sensor <br>"; 
   $sql_stmt = "insert into SENSOR (Sensor, Sensorinfo, Node, Channel) values (" .
               $q->param('SENSOR'). ", '".$q->param('SENSORI')."', '".$q->param('NODE')."', ".$q->param('CHANNEL'). ")"; 
   $sth = $dbh->prepare($sql_stmt);
@@ -150,15 +146,14 @@ elsif($action eq "new_sensor") {
   $sth->finish();
   write_info("Sensor ".$q->param('SENSOR')." neu angelegt! ");
 } 
-elsif($action eq "update_jobdesc") {
-  $sql_stmt = "update jobdesc set Jobdesc = '" . $q->param('JOBDESC') . "' where JOBNO = " . $q->param('JOBNO') . " ";
-  print "$sql_stmt <br>\n";
+elsif($action eq "update_jobchain") {
+  $sql_stmt = "update jobchain set Jobdesc = '" . $q->param('JOBDESC') . "' where JOBNO = " . $q->param('JOBNO') . " ";
   $sth = $dbh->prepare($sql_stmt);
   $sth->execute(); 
   $sth->finish();
   write_info("Jobkette ".$q->param('JOBNO')." aktualisiert! ");
 }
-elsif($action eq "delete_jobdesc") {
+elsif($action eq "delete_jobchain") {
   $sql_stmt = "select count(*) from JOB where JOBNO = " . $q->param('JOBNO') . " "; 
   $sth = $dbh->prepare($sql_stmt);
   $sth->execute(); 
@@ -167,53 +162,46 @@ elsif($action eq "delete_jobdesc") {
     write_err("$row[0] Jobdetaildatens&auml;tze vorhanden");
   } else {
     $sth->finish();
-    $sql_stmt = "delete from JOBDESC where JOBNO = '" . $q->param('JOBNO') . "'"; 
-    print "$sql_stmt <br>\n";
+    $sql_stmt = "delete from SCHEDULE where JOBNO = '" . $q->param('JOBNO') . "'"; 
+    $sth = $dbh->prepare($sql_stmt);
+    $sth->execute();
+    $sql_stmt = "delete from JOBCHAIN where JOBNO = '" . $q->param('JOBNO') . "'"; 
     $sth = $dbh->prepare($sql_stmt);
     $sth->execute();
     write_info("Jobkette ".$q->param('JOBNO')." gel&ouml;scht! ");
   } 
   $sth->finish();
 } 
-elsif($action eq "new_jobdesc") {
-  $sql_stmt = "insert into JOBDESC (JOBNO, JOBDESC) values (" .
-              $q->param('JOBNO'). ", '".$q->param('JOBDESC')."' )"; 
+elsif($action eq "new_jobchain") {
+  $sql_stmt = "insert into JOBCHAIN (JOBNO, JOBDESC) values (" .
+              "(select ifnull(max(JOBNO)+1,1) from JOBCHAIN), '".$q->param('JOBDESC')."' )"; 
   $sth = $dbh->prepare($sql_stmt);
   $sth->execute(); 
   $sth->finish();
-  write_info("Jobkette ".$q->param('JOBNO')." neu angelegt! ");
+  write_info("Neue Jobkette angelegt! ");
 } 
 elsif($action eq "update_job") {
-  $sql_stmt = "update job set seq = " . $q->param('JOBSEQ') . ", SENSOR = ". $q->param('SENSOR') .", VALUE = ". $q->param('VALUE') .
-              "  where JOBNO = " . $q->param('JOBNO') . " ";
+  $sql_stmt = "update job set SENSOR = ". $q->param('SENSOR') .", VALUE = ". $q->param('VALUE') .
+              "  where JOBNO = " . $q->param('JOBNO') . " and seq = " . $q->param('JOBSEQ');
   $sth = $dbh->prepare($sql_stmt);
   $sth->execute(); 
   $sth->finish();
   write_info("Job ".$q->param('JOBNO')."/".$q->param('JOBSEQ')." aktualisiert! ");
 }
 elsif($action eq "delete_job") {
-  $sql_stmt = "select count(*) from SCHEDULE where JOBNO = " . $q->param('JOBNO') . " "; 
+  $sql_stmt = "delete from JOB where JOBNO = '" . $q->param('JOBNO') . "' and SEQ = " . $q->param('JOBSEQ'); 
   $sth = $dbh->prepare($sql_stmt);
-  $sth->execute(); 
-  (@row = $sth->fetchrow_array());
-  if ( $row[0] > 0 ) {
-    write_err("$row[0] Datens&auml;tze im Ausführungsplan vorhanden");
-  } else {
-    $sth->finish();
-    $sql_stmt = "delete from JOB where JOBNO = '" . $q->param('JOBNO') . "' and SEQ = " . $q->param('JOBSEQ'); 
-    $sth = $dbh->prepare($sql_stmt);
-    $sth->execute();
-    write_info("Job ".$q->param('JOBNO')."/".$q->param('JOBSEQ')." gel&ouml;scht! ");
-  } 
+  $sth->execute();
+  write_info("Job ".$q->param('JOBNO')."/".$q->param('JOBSEQ')." gel&ouml;scht! ");
   $sth->finish();
 } 
 elsif($action eq "new_job") {
   $sql_stmt = "insert into JOB (JOBNO, SEQ, SENSOR, VALUE) values (" .
-              $q->param('JOBNO'). ", ".$q->param('JOBSEQ').", ".$q->param('SENSOR').", ".$q->param('VALUE')." )"; 
+              $q->param('JOBNO'). ", (select ifnull(max(seq)+1,1) from job where jobno=".$q->param('JOBNO')."), ".$q->param('SENSOR').", ".$q->param('VALUE')." )"; 
   $sth = $dbh->prepare($sql_stmt);
   $sth->execute(); 
   $sth->finish();
-  write_info("Job ".$q->param('JOBNO')."/".$q->param('JOBSEQ')." neu angelegt! ");
+  write_info("Neuer Job in Jobkette ".$q->param('JOBNO')." angelegt! ");
 } 
 elsif($action eq "update_schedule") {
   $sql_stmt = "update schedule set JOBNO = " . $q->param('JOBNO') . ", start = '" . $q->param('START') . "', INTERVAL = ". $q->param('INTERVAL') .
@@ -236,7 +224,7 @@ elsif($action eq "new_schedule") {
   $sth = $dbh->prepare($sql_stmt);
   $sth->execute(); 
   $sth->finish();
-  write_info("Ausf&uuml;hrungsplan ".$q->param('SCHEDULE')."  neu angelegt! ");
+  write_info("Neuer Ausf&uuml;hrungsplan angelegt! ");
 } 
 else {
 #  default_statement";
@@ -251,7 +239,7 @@ else {
 
 print "<h1>Nodes bearbeiten</h1>\n";
 
-$sth = $dbh->prepare("SELECT Node, Nodename, Battery_UN, Battery_act, Battery_UE, Location FROM node");
+$sth = $dbh->prepare("SELECT Node, Nodename, Battery_UN, ifnull(Battery_act,\"---\"), Battery_UE, Location FROM node");
 print "<Table $tabledetails><tr>",
       th("Node"), th("Nodename"), th("Batterie<br>Soll-<br>spannung"), th("Batterie<br>Ist-<br>spannung"), th("Batterie<br>Grenz-<br>spannung"), th("Standort"), th(" "), th(" ");
 $sth->execute(); 
@@ -292,7 +280,7 @@ print start_form("new_node"),
 print "<h1>Sensoren bearbeiten</h1>\n";
 my @sensorno=();
 my @sensorname=();
-$sth = $dbh->prepare("SELECT Sensor, Sensorinfo, Node, Channel, Last_Value, Last_TS FROM sensor");
+$sth = $dbh->prepare("SELECT Sensor, Sensorinfo, Node, Channel, ifnull(Last_Value,\"---\"), ifnull(Last_TS,\"---\") FROM sensor");
 print "<Table $tabledetails><tr>",
       th("Sensor"), th("Sensor<br>Beschreibung"), th("Node"), th("Channel"), th("Letzter<br>Wert"), th("letzte<br>Abfrage"), th(" "), th(" ");
 $sth->execute(); 
@@ -318,12 +306,12 @@ while (@row = $sth->fetchrow_array()) {
 $sth->finish();
 print start_form("new_sensor"),
       "<tr class=\"block2\">",
-      td_input("SENSOR","",5,5,"input"),
-      td_input("SENSORI","",30,80,"input"),
+      td_input("SENSOR"," ",5,5,"input"),
+      td_input("SENSORI"," ",30,80,"input"),
       td_input_select("NODE","","input",\@nodes,\@nodenames),
-      td_input("CHANNEL","",3,3,"input"),
-      td_input("LASTVAL","",5,10,"inputro"),
-      td_input("LASTTS","",15,15,"inputro"),
+      td_input("CHANNEL"," ",3,3,"input"),
+      td_input("LASTVAL"," ",5,10,"inputro"),
+      td_input("LASTTS"," ",15,15,"inputro"),
       td_submit("Anlegen","myButton"),
       "<td>&nbsp;</td>",
       end_form(),
@@ -335,51 +323,51 @@ print "<h1>Jobketten bearbeiten</h1>\n";
 my @jobno=();
 my @jobname=();
 
-$sth = $dbh->prepare("SELECT jobno, jobdesc FROM jobdesc");
+$sth = $dbh->prepare("SELECT jobno, jobdesc FROM jobchain");
 $sth->execute(); 
 while (@row = $sth->fetchrow_array()) {
-  print "<Table $tabledetails><tr>",
-        th("Jobkette"), th("Jobketten<br>Beschreibung"), th(" "), th(" "),
-        start_form("update_jobdesc"),
-        "<tr class=\"block2\">",
-        td_input("JOBNO",$row[0],5,5,"inputro"),
+  print "<Table $tabledetails><tr>\n",
+        th("Jobketten<br>Beschreibung"), th(" "), th(" "),
+        start_form("update_jobchain"),
+        "<tr class=\"block2\">\n",
+        "<input type=hidden name='JOBNO' value='$row[0]'>\n",
         td_input("JOBDESC",$row[1],80,120,"input"),
         td_submit("Editieren","myButton"),
         end_form(),
-        start_form("delete_jobdesc"),
-        "<input type=hidden name='JOBNO' value='$row[0]'>",
+        start_form("delete_jobchain"),
+        "<input type=hidden name='JOBNO' value='$row[0]'>\n",
         td_submit("Löschen","myButton"),
         end_form(),
         "</tr>\n"; 
   push(@jobno,$row[0]);     
   push(@jobname,$row[1]);     
-  my $sth1 = $dbh->prepare("SELECT jobno, seq, sensor, value FROM job where Jobno = $row[0] ");
+  my $sth1 = $dbh->prepare("SELECT jobno, seq, sensor, value FROM job where Jobno = $row[0] order by seq ");
   print "<tr class=\"block1\"><td colspan=4>",
         "<Table $tabledetails1><tr>",
-        th("lfdnr"), th("Sensor"), th("Value"), th(" "), th(" ");
+        th("Sensor"), th("Value"), th(" "), th(" ");
   $sth1->execute(); 
   while (@row1 = $sth1->fetchrow_array()) {
     print start_form("update_job"),
-          "<input type=hidden name='JOBNO' value='$row[0]'>",
-          "<tr class=\"block1\">",
-          td_input("JOBSEQ",$row1[1],5,5,"input"),
+          "<input type=hidden name='JOBNO' value='$row1[0]'>\n",
+          "<input type=hidden name='JOBSEQ' value='$row1[1]'>\n",
+          "<tr class=\"block1\">\n",
           td_input_select("SENSOR",$row1[2],"input",\@sensorno,\@sensorname),
           td_input("VALUE",$row1[3],10,10,"input"),
           td_submit("Editieren","myButton"),
           end_form(),
           start_form("delete_job"),
-          "<input type=hidden name='JOBNO' value='$row[0]'>",
+          "<input type=hidden name='JOBNO' value='$row[0]'>\n",
+          "<input type=hidden name='JOBSEQ' value='$row1[1]'>\n",
           td_submit("Löschen","myButton"),
           end_form(),
           "</tr>\n"; 
   }
   $sth1->finish();
-  print start_form("new_jobitem"),
+  print start_form("new_job"),
         "<input type=hidden name='JOBNO' value='$row[0]'>",
         "<tr class=\"block1\">",
-        td_input("JOBSEQ","",5,5,"input"),
         td_input_select("SENSOR","","input",\@sensorno,\@sensorname),
-        td_input("VALUE","",10,10,"input"),
+        td_input("VALUE","0",10,10,"input"),
         td_submit("Anlegen","myButton"),
         "<td>&nbsp;</td>",
         end_form(),
@@ -387,12 +375,11 @@ while (@row = $sth->fetchrow_array()) {
         "</table></tr></table>\n"; 
 }
 $sth->finish();
-print "<Table $tabledetails><tr>",
+print "<Table $tabledetails><tr>\n",
       th("Jobkette"), th("Jobketten<br>Beschreibung"), th(" "),
-      start_form("new_jobdesc"),
-      "<tr class=\"block2\">",
-      td_input("JOBNO","",5,5,"input"),
-      td_input("JOBDESC","",80,120,"input"),
+      start_form("new_jobchain"),
+      "<tr class=\"block2\">\n",
+      td_input("JOBDESC"," ",80,120,"input"),
       td_submit("Anlegen","myButton"),
       end_form(),
       "</tr>",
@@ -424,8 +411,8 @@ $sth->finish();
 print start_form("new_schedule"),
       "<tr class=\"block2\">",
       td_input_select("JOBNO","","input",\@jobno,\@jobname),
-      td_input("START","",20,20,"input"),
-      td_input("INTERVAL","",10,10,"input"),
+      td_input("START"," ",20,20,"input"),
+      td_input("INTERVAL"," ",10,10,"input"),
       td_submit("Anlegen","myButton"),
       end_form(),
       "</tr>",
