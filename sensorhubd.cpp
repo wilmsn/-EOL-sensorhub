@@ -13,7 +13,9 @@ Changed the delivery
 Master takes control over everything
 Node wakes up in a defined interval and listens into the network for something to do
 Database structure changed - not comüatible with V0.1 
-
+V0.3:
+Small changes in database structure
+Added Web-GUI (German only)
 
 
 
@@ -231,15 +233,15 @@ void store_value(uint16_t jobno, uint16_t seq, float val) {
                    "select a.sensor, "
                    "strftime('%%Y', datetime('now','localtime')), strftime('%%m', datetime('now','localtime')), "
                    "strftime('%%d', datetime('now','localtime')), strftime('%%H', datetime('now','localtime')), %f "
-                   " from sensor a, job b "
+                   " from sensor a, job_v b "
                    "where b.jobno = %u and b.seq = %u and a.node = b.node and a.channel = b.channel ", val, jobno, seq);
 #ifdef DEBUG 
   logmsg(sql_stmt);
 #endif
   do_sql(sql_stmt);
   sprintf(sql_stmt,"update sensor set last_value = %f, last_TS = datetime('now', 'localtime') "
-                   " where Node = (select node from job where jobno = %u and seq = %u) "
-                   " and channel = (select channel from job where jobno = %u and seq = %u)", val, jobno, seq, jobno, seq);
+                   " where Node = (select node from job_v where jobno = %u and seq = %u) "
+                   " and channel = (select channel from job_v where jobno = %u and seq = %u)", val, jobno, seq, jobno, seq);
   do_sql(sql_stmt);
 #ifdef DEBUG 
   logmsg(sql_stmt);
@@ -323,6 +325,11 @@ int main(int argc, char** argv) {
 #endif        
             del_messageentry(payload.Jobno, payload.seq);  
             store_value(payload.Jobno, payload.seq, payload.value); 
+            sprintf(sql_stmt,"update node set Battery_act = %f where node = '0%o'", payload.value, sendernode);
+            do_sql(sql_stmt);
+#ifdef DEBUG 
+            logmsg(sql_stmt);
+#endif
             break; }
           case 111: {
 #ifdef DEBUG 
@@ -384,27 +391,36 @@ int main(int argc, char** argv) {
       if ( time(0) > time_old + 59 ) {  // check every minute if we have jobs to scedule
         time_old = time(0);
 //
-// Case 1: Jobs that run at a scheduled time (start) and run only once (interval = -1)
+// Case 1: Jobs that run  immeadeately (start = -1) and run only once (interval = -1)
 //
         sprintf (sql_stmt, "insert into messagebuffer (jobno,seq,node,channel,value)"
-                 " select a.jobno, a.seq, a.node, a.channel, a.value from job a, schedule b "
+                 " select a.jobno, a.seq, a.node, a.channel, a.value from job_v a, schedule b "
+                 "  where a.jobno = b.jobno and start = -1 and interval = -1 ");
+        do_sql(sql_stmt);
+        sprintf (sql_stmt, "delete from schedule where start = -1 and interval = -1 "); 
+        do_sql(sql_stmt);
+//
+// Case 2: Jobs that run at a scheduled time (start) and run only once (interval = -1)
+//
+        sprintf (sql_stmt, "insert into messagebuffer (jobno,seq,node,channel,value)"
+                 " select a.jobno, a.seq, a.node, a.channel, a.value from job_v a, schedule b "
                  "  where a.jobno = b.jobno and (datetime(b.start) <= datetime('now','localtime') or start = -1) and interval = -1 ");
         do_sql(sql_stmt);
-        sprintf (sql_stmt, "delete from schedule where datetime(start) <= datetime('now','localtime') and interval = -1 "); 
+        sprintf (sql_stmt, "delete from schedule where start > -1 and datetime(start) <= datetime('now','localtime') and interval = -1 "); 
         do_sql(sql_stmt);
 //
-// Case 2: Jobs that start immeadeately (start = -1) and run every <interval> minutes
+// Case 3: Jobs that start immeadeately (start = -1) and run every <interval> minutes
+// 
+        sprintf (sql_stmt, "insert into messagebuffer (jobno,seq,node,channel,value)"
+                 " select a.jobno, a.seq, a.node, a.channel, a.value from job_v a, schedule b where a.jobno = b.jobno and b.start = -1 ");
+        do_sql(sql_stmt);
+        sprintf (sql_stmt, "update schedule set start = datetime(start, '+'||interval||' minutes') where start = -1 and interval > 0 "); 
+        do_sql(sql_stmt);
+//
+// Case 4: Jobs that run frequently - increment "start" by "interval" minutes 
 //
         sprintf (sql_stmt, "insert into messagebuffer (jobno,seq,node,channel,value)"
-                 " select a.jobno, a.seq, a.node, a.channel, a.value from job a, schedule b where a.jobno = b.jobno and b.start = -1 ");
-        do_sql(sql_stmt);
-        sprintf (sql_stmt, "update schedule set start = datetime(start, '+'||interval||' minutes') where start = -1"); 
-        do_sql(sql_stmt);
-//
-// Case 3: Jobs that run frequently - increment "start" by "interval" minutes 
-//
-        sprintf (sql_stmt, "insert into messagebuffer (jobno,seq,node,channel,value)"
-                 " select a.jobno, a.seq, a.node, a.channel, a.value from job a, schedule b "
+                 " select a.jobno, a.seq, a.node, a.channel, a.value from job_v a, schedule b "
                  "  where a.jobno = b.jobno and datetime(b.start) <= datetime('now','localtime') and interval > 0 ");
         do_sql(sql_stmt);
         sprintf (sql_stmt, "update schedule set start = datetime(start, '+'||interval||' minutes') "
