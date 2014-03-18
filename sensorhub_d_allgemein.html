@@ -21,14 +21,20 @@
 <li>Zentrale Speicherung der Daten auf einem Server</li>
 <li>Zentrale Steuerung aller Nodes durch den Server</li>
 </ul>
+
 <h2>SensorHub: Aufbau</h2>
+
 <p><a href="sensorhub_d_architektur.html">Architektur des Sensorhubs</a></p>
+
 <p><img src="cms_pic/sensorhub_overview.png">
-<br><sup><small>Der prinzipielle Aufbau des SensorHubs</small></sup></p>
-<p><img src="cms_pic/node_prinzip.jpg"></p>
-<br><sup><small>Der prinzipielle Aufbau eines Nodes</small></sup></p>
+<br><small>Der prinzipielle Aufbau des SensorHubs</small></p>
+
+<p><img src="cms_pic/node_prinzip.jpg">
+<br><small>Der prinzipielle Aufbau eines Nodes</small></p>
+
 <p>Der Aufbau ist in seiner Topologie durch die &gt;rf24network&lt; Software vorgegeben. Vom Server k&ouml;nnen 6 Nodes direkt angesprochen werden,
  alle anderen Nodes werden &uuml;ber die jeweiligen Masternodes angesprochen.</p>
+ 
 <h2>SensorHub: Server</h2>
 <p>Zentrale Einheit bildet ein Linux Server, in meinem Fall ein Raspberry Pi, es kann jedoch auch jeder andere Server verwendet werden. 
  Vorraussetzung ist ein angeschlossenes, betriebsbereites Funkmodul vom Typ &gt;nrf24l01&lt;. 
@@ -36,8 +42,12 @@
  <p>Die Verbindung zu den Nodes wird &uuml;ber Funkmodule im freien 2.4ghz Band realisiert.</p>
  <p>Die Nodes werden sternf&ouml;rmig an den Server angeschlossen.</p>
  <p><a href="sensorhub_d_hub.html">Details zum Server</a></p>
- <h2>SensorHub: Node(s)</h2><p>Meine Nodes bestehen aus selbstgebauten &gt;Arduinos&lt;.</p>
- <p><img src="cms_pic/selbstbau_arduino_sch.jpg"><sup><small>Grundschaltung eines selbstgebauten &gt;Arduinos&lt;</small></sup></p>
+ <p><a href="sensorhub_d_datenbank.html">Details zum Aufbau der Datenbank</a></p>
+ 
+ <h2>SensorHub: Node(s)</h2>
+ <p>Meine Nodes bestehen aus selbstgebauten &gt;Arduinos&lt;.</p>
+ <p><img src="cms_pic/selbstbau_arduino_sch.jpg">
+ <br><small>Grundschaltung eines selbstgebauten &gt;Arduinos&lt;</small></p>
  <p>Sensoren und Aktoren k&ounl;nnen beliebig angeschlossen werden, die Vorgehensweise wird hier detailiert beschrieben:</p>
  <p><a href="sensorhub_d_node.html" title="SensorHub – Nodes">Details zu Nodes</a></p>
  <h2>SensorHub: Wichtige Hinweise</h2>
@@ -52,9 +62,6 @@
  <p>Arduino Software: <a href="http://www.arduino.cc" target="_blank">Download from Arduino.cc</a></p>
  <p>Hardware: Ich habe meine Funkmodule und die Sensoren &uuml;ber ein grosses Internetauktionshaus mit 4 Buchstaben &uuml;ber H&auml;ndler in China 
  bezogen.</p>
- 
- 
- 
  
  </body>
 </html>
