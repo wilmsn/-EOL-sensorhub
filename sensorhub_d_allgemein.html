@@ -9,41 +9,44 @@
 </head>
 
 <body>
-<h1 class="entry-title">SensorHub – Übersicht</h1>
+<h1 class="entry-title">SensorHub &Uuml;bersicht</h1>
 <h2>SensorHub -<br>ein serverbasiertes Funknetzwerk aus Sensoren und Aktoren</h2>
-<h2>Zielsetzung</h2><ul><li>Anschluß beliebiger Sensoren (z.B. Luftdruck, Temperatur, Licht)</li>
-<li>Anschluß beliebiger Aktoren (z.B. Steckdosen, Lampen)</li><li>Aufbau mit “Low Cost” Komponenten</li>
+<h2>Zielsetzung</h2><ul>
+<li>Anschluss beliebiger Sensoren (z.B. Luftdruck, Temperatur, Licht)</li>
+<li>Anschluss beliebiger Aktoren (z.B. Steckdosen, Lampen)</li>
+<li>Aufbau mit &gt;Low Cost&lt; Komponenten</li>
 <li>Batteriebetrieb der Nodes mit langer Laufzeit ( ca. ein Jahr mit 2 AA Batterien)</li>
-<li>Administration über Webbrowser</li>
+<li>Administration &uuml;ber Webbrowser</li>
 <li>Zeit- und Ereignissteuerung von Aktoren</li>
 <li>Zentrale Speicherung der Daten auf einem Server</li>
 <li>Zentrale Steuerung aller Nodes durch den Server</li>
-</ul><h2>SensorHub: Aufbau</h2><p><img src="cms_pic/sensorhub_overview.png">
-<small><br></small></p><p><sup><small>Der prinzipielle Aufbau des SensorHubs</small></sup></p>
+</ul>
+<h2>SensorHub: Aufbau</h2>
+<p><img src="cms_pic/sensorhub_overview.png">
+<br><sup><small>Der prinzipielle Aufbau des SensorHubs</small></sup></p>
 <p><img src="cms_pic/node_prinzip.jpg"></p>
-<p><sup><small>Der prinzipielle Aufbau eines Nodes</small></sup></p>
-<p><br></p>
-<p>Der Aufbau ist in seiner Topologie durch die “rf24network” Software vorgegeben. Vom Server können 6 Nodes direkt angesprochen werden, alle anderen Nodes 
-werden über die jeweiligen Masternodes angesprochen.</p>
-<p>&nbsp;</p>
+<br><sup><small>Der prinzipielle Aufbau eines Nodes</small></sup></p>
+<p>Der Aufbau ist in seiner Topologie durch die &gt;rf24network&lt; Software vorgegeben. Vom Server können 6 Nodes direkt angesprochen werden,
+ alle anderen Nodes werden über die jeweiligen Masternodes angesprochen.</p>
 <h2>SensorHub: Server</h2>
-<p>Zentrale Einheit bildet ein Linux Server, in meinem Fall ein Raspberry Pi, es kann jedoch auch jeder andere Server verwendet werden. Vorraussetzung ist ein 
-angeschlossenes, betriebsbereites Funkmodul vom Typ “nrf24l01?. Um eine bessere Reichweite zu erzielen habe ich für den Server ein Modul mit integriertem Verstärker
- (PA) und sepatater Antenne verwendet.</p>
+<p>Zentrale Einheit bildet ein Linux Server, in meinem Fall ein Raspberry Pi, es kann jedoch auch jeder andere Server verwendet werden. 
+ Vorraussetzung ist ein angeschlossenes, betriebsbereites Funkmodul vom Typ &gt;nrf24l01&lt;. 
+ Um eine bessere Reichweite zu erzielen habe ich für den Server ein Modul mit integriertem Verstärker (PA) und sepatater Antenne verwendet.</p>
  <p>Die Verbindung zu den Nodes wird über Funkmodule im freien 2.4ghz Band realisiert.</p>
  <p>Die Nodes werden sternförmig an den Server angeschlossen.</p>
  <p><a href="/sensorhub_d_hub.html">Details zum Server</a></p>
- <h2>SensorHub: Node(s)</h2><p>Meine Nodes bestehen aus selbstgebauten “Arduinos”.</p>
- <p><a><img src="cms_pic/selbstbau_arduino_sch.jpg"></a></p><p><sup><a><small>Grundschaltung eines selbstgebauten “Arduinos”</small></a></sup></p>
- <p><a>Sensoren und Aktoren können beliebig angeschlossen werden, die Vorgehensweise wird hier detailiert beschrieben:</a></p>
- <p><a href="/readcms?topic=5" title="SensorHub – Nodes">Details zu Nodes</a></p><h2>SensorHub: Wichtige Hinweise</h2>
+ <h2>SensorHub: Node(s)</h2><p>Meine Nodes bestehen aus selbstgebauten &gt;Arduinos&lt;.</p>
+ <p><img src="cms_pic/selbstbau_arduino_sch.jpg"><sup><small>Grundschaltung eines selbstgebauten “Arduinos”</small></sup></p>
+ <p>Sensoren und Aktoren können beliebig angeschlossen werden, die Vorgehensweise wird hier detailiert beschrieben:</p>
+ <p><a href="sensorhub_d_node.html" title="SensorHub – Nodes">Details zu Nodes</a></p>
+ <h2>SensorHub: Wichtige Hinweise</h2>
  <p>Alles was hier dokumentierte ist nach bestem Wissen und Gewissen niedergeschrieben worden.</p>
- <p><b>Ich übernehme keinerlei Verantwortung für Fehler oder Schäden die aus dem Gebrauch bzw. Nachbau dieses Projektes entstehen!</b></p>
+ <p><b>Ich übernehme keinerlei Verantwortung für Fehler oder Sch&auml;den die aus dem Gebrauch bzw. Nachbau dieses Projektes entstehen!</b></p>
  <p>In diesem Projekt wurde freie Software eingesetzt. Diese Software wird von mir nicht betreut, bei Fehlern in dieser Software wenden Sie sich bitte direkt 
- an den Programmierer. Ich freue mich darüber das diese Software frei verfügbar ist und danke hiermit den Erstellern.</p>
+ an den Programmierer. Ich freue mich darüber das diese Software frei verf&uuml;gbar ist und danke hiermit den Erstellern.</p>
  <p>&nbsp;</p>
  <h2>Bezugsquellen:</h2><p>Meinen Programmcode finden Sie im <a href="http://www.github.com/wilmsn" target="_blank">Github</a></p>
- <p>rf24network: <a title="rf24networ on Github" href="https://github.com/farconada/RF24Network">Download from Github</a>
+ <p>rf24network: <a title="rf24networ on Github" href="https://github.com/farconada/RF24Network" target="_blank">Download from Github</a>
  – <a title="Dokumentation" href="http://maniacbug.github.io/RF24Network/index.html" target="_blank">Dokumentation dazu</a></p>
  <p>Arduino Software: <a href="http://www.arduino.cc" target="_blank">Download from Arduino.cc</a></p>
  <p>Hardware: Ich habe meine Funkmodule und die Sensoren über ein großes Internetauktionshaus mit 4 Buchstaben über Händler in China bezogen.</p>
