@@ -1,0 +1,193 @@
+Wiki for Sensorhub
+
+Sensorhub in a nut shell - just a very basic documentation
+
+- What do i need:
+
+1) A server ( i took the raspberry pi )
+   With this hardware:
+   - nRF24L01 wireless module
+   With this software
+   - Gnu c++ compiler
+   - SQlite3 Database
+   - rf24network (i found it here: https://github.com/farconada/RF24Network) (Doc: http://maniacbug.github.io/RF24Network/index.html)
+   - a webserver (i use apache2) if you want to use the webinterface
+
+2) A number of nodes
+   Minimal Hardware:
+   - ATmega328P
+   - nRF24L01 wireless module
+   - opt: a sensor of your choice (or just simple a LED and a resistor to test a remote LED)
+   - a battery to power it
+
+3) A computer with the Arduino software (get it from www.arduino.cc) to progrann the nodes
+
+- How do i set it up:
+
+Server:
+1) install all required software.
+2) install the wireless module and make shure you have this files: "/dev/spidev0.0" "/dev/spidev0.1"
+2.a) Make sure you have the following folder:
+  $HOME/RF24Network
+3) go to you sensorhub dir and run
+3.a) "git init"
+3.b) "git pull https://github.com/wilmsn/sensorhub.git"
+3.c) "make"
+4) if everything is OK run "sudo make install"
+4a) you can control this service with "sudo service sensorhub <option>" option is one of "start" "stop" "clearlog"
+5) configure the database, setup webpage, ...
+
+Node:
+1) take some hardware and build it together
+2) take a template from arduino folder and change it to your needs
+3) programm the node using a USBASP adapter (Details here: http://www.fischl.de/usbasp/)
+
+Webcontent:
+you will find a simple weatherstation (german only) as a sample in the html folder.
+To display the graphics you also have to put files in the folder cgi-bin in the cgi dir of your werbserver.
+"perl" must be installed with "gd" library.
+
+Details:
+
+----- to be compleated ----
+
+Database structure:
+
+Table to entry data by the administrator: Columns marked with [m] are mandatory!
+Table "Node"
+  Enter one line for each node.
+Column "Nodeadr" [m]
+  Enter the address of the node.
+Column "Battery_Sensoradr"
+  Enter the address of the battery sensor from this node.
+Column "Battery_UN"
+  Enter the nominal voltage of the battery.
+Column "Battery_UE"
+  Enter the minimal voltage of the battery. If the voltage is lower the battery will be marked as empty.
+Column "Location"
+  --- Not used by sensorhub ---
+
+Table "Sensor"
+Column "Nodeadr" [m]
+  Enter the address of the node where the sensor is in.
+Column "Sensoradr" [m]
+  Enter the address of this sensor.
+Column "Sensortype" [m]
+  Enter the type of this sensor ==> see sensortypes below.
+Column "Last_Value"
+  Filled by application! The last delivered value.
+Column "Last_TS"
+  Filled by application! The Timestamp of the last delivery.
+Column "Sensorinfo"
+  --- Not used by sensorhub ---
+Column "Nominal_Heartbeat"
+  --- Not used by sensorhub ---
+
+
+  Sensortypes:
+  1 ==> One Value will be stored every hour in table "sensordata". If the hub receives more than one value, the newer one will overwrite the older one.
+  2 ==> One Value will be stored every day in table "sensordata". If the hub receives more than one value, the newer one will overwrite the older one.
+  9 ==> Batterysensor
+  10 ==> This sensor is a receiver. No value will be stored in table "sensor".
+
+Other Table, data will be entered by the software:
+Table "Sensordata"
+  Will store historical Data from the sensors as configured in table "sensor"
+Column "Year"
+  The year.
+Column "Month"
+  The month.
+Column "Day"
+  The day.
+Column "Hour"
+  The hour if the sensor is type "1". If sensor is type "2" or "9" the value "0" will be stored.
+Column "Sensoradr"
+  The address of the sensor.
+Column "Value"
+  The value delivered by the sensor, always as float.
+Column "Heartbeatcount"
+  The count of deliveries per timeunit (depends on the sensortype)
+
+Table "Queue"
+  Will store the data to deliver to the sensor (type 10) until the delivery is commited by the sensor.
+  After the sensor sends a feedback (his number and the delivered value) the entry will be deleted.
+Column "Sensoradr"
+  The number of the sensor.
+Column "Value"
+  The value to delivered to the sensor, always as float.
+
+
+
+
+Äderungen:
+Master ümmt komplette Steuerung!
+Client horcht alle X Sekunden ins Netzwerk, sonst Lowpowerstate.
+
+Anforderung an Client zum Aufwachen:
+Master sendet solange eine Message (type=99, Sensor=0, value=0 ) an den Client bis dieser eine Quittung schickt.
+Client schickt eine Quittung (type=99, Sensor=0, value=0 ) an den Master und bleibt im Empfangsmode.
+
+Anforderung an Client Weiterschlafen (Ende Aufwachen):
+Master sendet solange eine Message (type=98, Sensor=0, value=0 ) an den Client bis dieser eine Quittung schickt.
+Client schickt eine Quittung (type=98, Sensor=0, value=0 ) an den Master und bleibt im Empfangsmode.
+ 
+
+
+
+
+Header Types:
+ 0 : Nicht benutzt
+
+By default implemented in sensorhub:
+ 1...10 : Reserviert fü Sensoren auf dem Node (Value = Messwert)
+51...60 : Reserviert fügäe auf dem Node ( Value = einzustellender Wert )
+
+Used by system sensorhub only
+101: Battery Voltage: Node sends his battery voltage in value
+
+111: Sleeptimer (interval) for node in Value also starts sleepmode
+112: Radio power when sleep: 0: power down; 1 power up;
+
+117: Wakes up the node, sleep disabled
+
+119: Initsignal of the Node : Master sends configuration back. when finished master sends message of this type.
+
+Tabellen dazu:
+node_act_val:
+[node]
+[type]
+[value]
+
+node_def_val:
+[node]
+[type]
+[value]
+
+[messagebuffer]
+[node]
+[type]
+[value]
+
+
+TestSQL:
+
+create table messagebuffer (orderno INT, seq INT, status INT DEFAULT 0, node TEXT, type INT, i_value INT, f_value FLOAT, PRIMARY KEY(orderno, seq));
+
+insert into messagebuffer (orderno, seq, node, type, i_value, f_value) values (1,1,'4', 99, 0, 0);
+insert into messagebuffer (orderno, seq, node, type, i_value, f_value) values (1,2,'4', 21, 1, 0);
+insert into messagebuffer (orderno, seq, node, type, i_value, f_value) values (1,3,'4', 98, 0, 0);
+
+insert into messagebuffer (orderno, seq, node, type, i_value, f_value) values (2,1,'3', 99, 1, 0);
+insert into messagebuffer (orderno, seq, node, type, i_value, f_value) values (2,2,'3', 21, 1, 0);
+insert into messagebuffer (orderno, seq, node, type, i_value, f_value) values (2,3,'3', 98, 1, 0);
+
+create view message2send as select orderno, min(seq), node, type, i_value, f_value from messagebuffer where status = 0 group by orderno;
+
+update messagebuffer set status = 1 where orderno=1 and seq=1;
+
+
+CREATE TABLE schedule (node text, type int, value real, start , interval, primary key (node, type));
+select * from schedule where datetime(start) < datetime('now', 'localtime');
+update schedule set start = datetime(start, '+1 day') where datetime(start) < datetime('now', 'localtime');
+
+
