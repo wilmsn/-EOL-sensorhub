@@ -5,6 +5,8 @@ A network of sensornodes and a server with database, webserver, ...
 
 Still in an early state ... but working
 
+For documentation goto http://wilmsn.github.io/sensorhub/
+
 Environment:
 ============
 - Server: Raspberry PI
