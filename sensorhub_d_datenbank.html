@@ -1,44 +1,121 @@
 <h1> Datenbankstrukturen </h1>
 <p> Create Statements: </p>
 <pre>
+-- Tabellen fuer Inventar
 CREATE TABLE Node
-       (Node TEXT PRIMARY KEY, Battery_UN FLOAT, Battery_UE FLOAT, Location TEXT, Battery_act FLOAT, Nodename TEXT);
+       (Node TEXT PRIMARY KEY, Nodename TEXT, Battery_UN FLOAT, Battery_UE FLOAT, Battery_act FLOAT, Location TEXT  );
+CREATE TABLE Sensor
+       (Sensor INT PRIMARY KEY, Sensorinfo TEXT, Node TEXT, Channel INT, Last_Value FLOAT, Last_TS TEXT,
+       FOREIGN KEY (Node) REFERENCES Node(Node) );
+CREATE TABLE Actor
+       (Actor INT PRIMARY KEY, Actorinfo TEXT, Node TEXT, Channel INT, Source INT, Value FLOAT);
+	   
+-- Tabellen zur Jobverwaltung
+CREATE TABLE job
+       (Job INT, Seq INT, type INT, ID INT, PRIMARY KEY ( job, seq ));
+CREATE TABLE jobchain(job INT,jobdesc TEXT);
+
+-- Tabellen zur Ausfuehrungsdteuerung
+CREATE TABLE schedule
+       (schedule INT PRIMARY KEY, job int, Start, Interval INT, type INT, trigger INT,
+       FOREIGN KEY (Job) REFERENCES jobchain(JOB));
+
+	   
+-- Entwurf !!!!!!!!	   
 CREATE TABLE Trigger
        (Triggerno INT PRIMARY KEY, Triggername TEXT, Trigger_sensor INT, Trigger_value FLOAT, Trigger_edge INT, trigger_hysteresis float);
-CREATE TABLE actor
-(Actor INT PRIMARY KEY, Actorinfo TEXT, Node TEXT, Channel INT, Source INT, Value FLOAT,
  FOREIGN KEY (Node) REFERENCES Node(Node) );
-CREATE TABLE job
-       ( jobno INT, seq INT, Sensor INT, value FLOAT,
-       PRIMARY KEY ( jobno, seq ),
-       FOREIGN KEY (Sensor) REFERENCES Sensor(Sensor) );
-CREATE TABLE jobchain(jobno INT,jobdesc TEXT);
+
+-- Tabellen zur internen Ablaufsteuerung 
+CREATE TABLE Scheduled_Jobs
+       (job INT);
 CREATE TABLE messagebuffer
-       ( jobno INT, seq INT, node TEXT, channel INT, value FLOAT,
-       PRIMARY KEY ( jobno, seq ));
-CREATE TABLE schedule
-       (schedule INT PRIMARY KEY,jobno int, Start, Interval INT, type INT, triggerno INT,
-       FOREIGN KEY (Jobno) REFERENCES jobchain(JOBNO));
-CREATE TABLE sensor
-       (Sensor INT PRIMARY KEY, Sensorinfo TEXT, Node TEXT, Channel INT, Last_Value FLOAT, Last_TS TEXT, type TEXT,
-       FOREIGN KEY (Node) REFERENCES Node(Node) );
-CREATE TABLE sensordata
+       ( job INT, seq INT, node TEXT, channel INT, value FLOAT,
+       PRIMARY KEY ( job, seq ));
+CREATE VIEW message2send
+       as select job, min(seq) as aseq, node, channel, value from messagebuffer
+       group by job;
+
+-- Tabellen zur Ergebnisspeicherung
+CREATE TABLE Sensordata
        (Sensor INT, Year INT, Month INT, Day INT, Hour INT, Value FLOAT,
        PRIMARY KEY (Year, Month, Day, Hour, Sensor));
-CREATE VIEW message2send
-       as select jobno, min(seq) as aseq, node, channel, value from messagebuffer
-       group by jobno;
-CREATE VIEW job_v as
-select  a.jobno, a.seq, b.node, b.channel, a.value
-from job a, sensor b
-where a.sensor = b.sensor;
+	   
+-- Views zur internen Verarbeitung	   
+CREATE VIEW Scheduled_messages as
+       SELECT a.job, a.seq, b.node, b.channel, 0 as value from job a, sensor b	 
+         where 	a.type = 1 and a.id = b.sensor and a.job in ( select job from Scheduled_Jobs )
+       union all
+       SELECT a.job, a.seq, b.node, b.channel, c.Last_Value from job a, actor b, sensor c	 
+         where 	a.type = 2 and a.id = b.actor and a.job in ( select job from Scheduled_Jobs ) 
+		    and b.source ='s' and c.sensor = b.Value
+       union all
+       SELECT a.job, a.seq, b.node, b.channel, b.Value from job a, actor b	 
+         where 	a.type = 2 and a.id = b.actor and a.job in ( select job from Scheduled_Jobs ) 
+		    and b.source ='v'
+		;
+CREATE VIEW sensors_and_actors as
+       SELECT  's'||sensor as key, 1 as type, sensor as id, Sensorinfo as info, node, channel from Sensor	
+       union all
+       SELECT 'a'||actor , 2, actor, Actorinfo, node, channel from Actor
+       ;	   
+
+			
+	   
+	   
 </pre>
 
+<h2> Node </h2>
+<p>
+Der Node ist durch seine ID (Feld Node) eindeutig bestimmt.
+Alle weiteren Felder sind lediglich informativ.
+<table border=1><tr><th>Feldname</th><th>Inhalt</th></tr>
+<tr><td>Node</td><td>Die Kennung des Nodes im Textformat. Die Kennung wird oktal immer mit f&uuml;render Null eingegeben</td></tr>
+<tr><td>Nodename</td><td>Der angezeigte Name f&uuml;er diesen Node</td></tr>
+<tr><td>Battery_UN</td><td>Die Nennspannung der im Node eingesetzten Batterie (Information, derzeit nicht verwendet)</td></tr>
+<tr><td>Battery_UE</td><td>Die Spannung der Batterie ab der die Batterie gewechselt werden muss</td></tr>
+<tr><td>Battery_act</td><td>Die letzte gemessene Spannung der durch Aufruf des Sensors auf Channel 101 des Nodes. Der Wert wird durch den SensorHubd eingetragen</td></tr>
+<tr><td>Location</td><td>Erg&auml;nzender Text, z.B. &uuml;ber den Aufstellungsort. Hier kann beliebiger Text eingetragen werden</td></tr>
+</table>
+</p>
+<h2> Sensor </h2>
+<p>
+Der Sensor ist durch seine ID (Feld sensor) eindeutig bestimmt.
+Die Kombination aus den Feldern Node und Channel ist ebenfalls eindeutig!
+<table border=1><tr><th>Feldname</th><th>Inhalt</th></tr>
+<tr><td>Sensor</td><td>Eindeutige ID dieses Sensors</td></tr>
+<tr><td>Sensorinfo</td><td>Beschreibender Text f&uuml;r diesen Sensor</td></tr>
+<tr><td>Node</td><td>Die ID des Nodes</td></tr>
+<tr><td>Channel</td><td>Der Channel zur Adressierung</td></tr>
+<tr><td>Last_Value</td><td>Der letzte durch eine Abfrage gemessene Wert (eingetragen durch SensorHubd)</td></tr>
+<tr><td>Last_TS</td><td>Der Zeitpunkt der letzten Abfrage (eingetragen durch SensorHubd)</td></tr>
+</table>
+</p>
+<h2> Actor </h2>
+<p>
+Der Actor wird durch seine ID (Feld actor) eindeutig bestimmt.
+Im Gegensatz zu den Sensoren kann es die Kombination aus Node und Channel mehrmals geben. 
+In diesem Fall unterscheidet sich der Aktor durch seinen Wert (z.B. Aktor einschalten und ausschalten wird durch 2 Eintr&auml;ge abgebildet).  
+<table border=1><tr><th>Feldname</th><th>Inhalt</th></tr>
+<tr><td>Actor</td><td>Eindeutige Referenz dieses Aktors</td></tr>
+<tr><td>Actorinfo</td><td>Beschreibender Text f&uuml;r diesen Aktor</td></tr>
+<tr><td>Node</td><td>Die ID des Nodes</td></tr>
+<tr><td>Channel</td><td>Der Channel zur Adressierung</td></tr>
+<tr><td>Source</td><td>Die Quelle des Wertes(Value). Kann folgende Inhalte annehmen:<br>"s": Inhalt kommt vom Sensor dessen ID im Feld "Value" geseichert ist<br>"v": Der Wert im Feld "Value" ist der zu &uuml;bertragene Wert</td></tr>
+<tr><td>Value</td><td>Interpretation &uuml;ber das Feld "Source"</td></tr>
+</table>
+</p>
 
+<h2> Job </h2>
+<p>
+Annahme: Actor und sensor werden ueber die ID gespeichert.
+<table border=1><tr><th>Feldname</th><th>Inhalt</th></tr>
 
+<tr><td>    </td><td>      </td></tr>
+</table>
+CREATE TABLE Job
+       (Job INT PRIMARY KEY, Seq INT, type INT, ID INT,
 
-
-
-
+</p>
 
 <p><a href="sensorhub_d_allgemein.html">Zur&uuml;ck zur &Uuml;bersicht</a></p>
