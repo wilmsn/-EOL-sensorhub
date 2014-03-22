@@ -16,8 +16,9 @@ Database structure changed - not comüatible with V0.1
 V0.3:
 Small changes in database structure
 Added Web-GUI (German only)
-
-
+V0.4:
+Database structure extended
+Added Actors
 
 
 
@@ -54,7 +55,7 @@ RF24Network network(radio);
 
 // Structure of our payload
 struct payload_t {
-  uint16_t Jobno;
+  uint16_t Job;
   uint16_t seq; 
   float value;
 };
@@ -62,7 +63,7 @@ payload_t payload;
 
 // Structure to handle the orderqueue
 struct order_t {
-  uint16_t Jobno;
+  uint16_t Job;
   uint16_t seq; 
   uint16_t to_node; 
   unsigned char channel; 
@@ -216,10 +217,10 @@ void do_sql(char *mysql) {
   }
 }
 
-void del_messageentry(uint16_t Jobno, uint16_t seq) {
+void del_messageentry(uint16_t Job, uint16_t seq) {
   char sql_stmt[300];            
-  sprintf(sql_stmt, " delete from messagebuffer where Jobno = %u and seq = %u "
-                  , Jobno, seq );
+  sprintf(sql_stmt, " delete from messagebuffer where Job = %u and seq = %u "
+                  , Job, seq );
   do_sql(sql_stmt);
 #ifdef DEBUG 
   logmsg(sql_stmt);
@@ -228,21 +229,20 @@ void del_messageentry(uint16_t Jobno, uint16_t seq) {
 }
 
 
-void store_value(uint16_t jobno, uint16_t seq, float val) {
+void store_value(uint16_t job, uint16_t seq, float val) {
   char sql_stmt[300];            
   sprintf(sql_stmt,"insert or replace into sensordata (sensor, year, month, day, hour, value) "
-                   "select a.sensor, "
+                   "select id, "
                    "strftime('%%Y', datetime('now','localtime')), strftime('%%m', datetime('now','localtime')), "
                    "strftime('%%d', datetime('now','localtime')), strftime('%%H', datetime('now','localtime')), %f "
-                   " from sensor a, job_v b "
-                   "where b.jobno = %u and b.seq = %u and a.node = b.node and a.channel = b.channel ", val, jobno, seq);
+                   " from job "
+                   "where job = %u and seq = %u ", val, job, seq);
 #ifdef DEBUG 
   logmsg(sql_stmt);
 #endif
   do_sql(sql_stmt);
   sprintf(sql_stmt,"update sensor set last_value = %f, last_TS = datetime('now', 'localtime') "
-                   " where Node = (select node from job_v where jobno = %u and seq = %u) "
-                   " and channel = (select channel from job_v where jobno = %u and seq = %u)", val, jobno, seq, jobno, seq);
+                   " where sensor = (select id from job where job = %u and seq = %u and type=1) ", val, job, seq);
   do_sql(sql_stmt);
 #ifdef DEBUG 
   logmsg(sql_stmt);
@@ -300,23 +300,32 @@ int main(int argc, char** argv) {
         network.read(rxheader,&payload,sizeof(payload));
 #ifdef DEBUG 
         char debug[300];
-        sprintf(debug, DEBUGSTR "Received: Channel: %u from Node: %o to Node: %o Jobno %d Seq %d Value %f "
-                     , rxheader.type, rxheader.from_node, rxheader.to_node, payload.Jobno, payload.seq, payload.value);
+        sprintf(debug, DEBUGSTR "Received: Channel: %u from Node: %o to Node: %o Job %d Seq %d Value %f "
+                     , rxheader.type, rxheader.from_node, rxheader.to_node, payload.Job, payload.seq, payload.value);
         logmsg(debug);
 #endif        
         uint16_t sendernode=rxheader.from_node;
         switch (rxheader.type) {
 
-          case 1 ... 99: {
-            // Sensor 1
+          case 1 ... 20: {
+            // Sensor 
 #ifdef DEBUG 
-            sprintf(debug, DEBUGSTR "Value of sensor 1 on Node: %o is %f ", sendernode, payload.value);
+            sprintf(debug, DEBUGSTR "Value of sensor %u on Node: %o is %f ", rxheader.type, sendernode, payload.value);
             logmsg(debug);        
 #endif        
-            del_messageentry(payload.Jobno, payload.seq);  
-            store_value(payload.Jobno, payload.seq, payload.value); 
+            del_messageentry(payload.Job, payload.seq);  
+            store_value(payload.Job, payload.seq, payload.value); 
             break; }
 
+          case 21 ... 99: {
+            // Actor 
+#ifdef DEBUG 
+            sprintf(debug, DEBUGSTR "Value of sensor %u on Node: %o is %f ", rxheader.type, sendernode, payload.value);
+            logmsg(debug);        
+#endif        
+            del_messageentry(payload.Job, payload.seq);  
+//            store_value(payload.Job, payload.seq, payload.value); 
+            break; }
 
           case 101: {
             // battery volatage
@@ -324,8 +333,8 @@ int main(int argc, char** argv) {
             sprintf(debug, DEBUGSTR "Voltage of Node: %o is %f ", sendernode, payload.value);
             logmsg(debug);        
 #endif        
-            del_messageentry(payload.Jobno, payload.seq);  
-            store_value(payload.Jobno, payload.seq, payload.value); 
+            del_messageentry(payload.Job, payload.seq);  
+            store_value(payload.Job, payload.seq, payload.value); 
             sprintf(sql_stmt,"update node set Battery_act = %f where node = '0%o'", payload.value, sendernode);
             do_sql(sql_stmt);
 #ifdef DEBUG 
@@ -337,7 +346,7 @@ int main(int argc, char** argv) {
             sprintf(debug, DEBUGSTR "Init of Node: %o finished: Sleeptime set to %f ", sendernode, payload.value);
             logmsg(debug);        
 #endif        
-            del_messageentry(payload.Jobno, payload.seq);  
+            del_messageentry(payload.Job, payload.seq);  
             break; }
           case 112: {
             txheader.type=112;
@@ -348,14 +357,14 @@ int main(int argc, char** argv) {
             else sprintf(debug, "---Debug: Radio allways off for Node: %o finished.", sendernode);
             logmsg(debug);        
 #endif        
-            del_messageentry(payload.Jobno, payload.seq);  
+            del_messageentry(payload.Job, payload.seq);  
             break;  }              
           case 117: {
 #ifdef DEBUG 
             sprintf(debug, DEBUGSTR "Wake up of Node: %o finished.", sendernode);
             logmsg(debug);        
 #endif        
-            del_messageentry(payload.Jobno, payload.seq);  
+            del_messageentry(payload.Job, payload.seq);  
 
             break; }
           case 119: {
@@ -394,9 +403,9 @@ int main(int argc, char** argv) {
 //
 // Case 1: Jobs that run  immeadeately (start = -1) and run only once (interval = -1)
 //
-        sprintf (sql_stmt, "insert into messagebuffer (jobno,seq,node,channel,value)"
-                 " select a.jobno, a.seq, a.node, a.channel, a.value from job_v a, schedule b "
-                 "  where a.jobno = b.jobno and start = '-1' and interval = -1 ");
+        sprintf (sql_stmt, "insert into Scheduled_Jobs (job)"
+                 " select job from schedule "
+                 "  where start = '-1' and interval = -1 ");
 #ifdef DEBUG 
         logmsg(sql_stmt);        
 #endif        
@@ -409,9 +418,9 @@ int main(int argc, char** argv) {
 //
 // Case 2: Jobs that run at a scheduled time (start) and run only once (interval = -1)
 //
-        sprintf (sql_stmt, "insert into messagebuffer (jobno,seq,node,channel,value)"
-                 " select a.jobno, a.seq, a.node, a.channel, a.value from job_v a, schedule b "
-                 "  where a.jobno = b.jobno and datetime(b.start) <= datetime('now','localtime') and interval = -1 ");
+        sprintf (sql_stmt, "insert into Scheduled_Jobs (job)"
+                 " select job from schedule "
+                 "  where datetime(start) <= datetime('now','localtime') and interval = -1 ");
 #ifdef DEBUG 
         logmsg(sql_stmt);        
 #endif        
@@ -424,8 +433,9 @@ int main(int argc, char** argv) {
 //
 // Case 3: Jobs that start immeadeately (start = -1) and run every <interval> minutes
 // 
-        sprintf (sql_stmt, "insert into messagebuffer (jobno,seq,node,channel,value)"
-                 " select a.jobno, a.seq, a.node, a.channel, a.value from job_v a, schedule b where a.jobno = b.jobno and b.start = '-1' ");
+        sprintf (sql_stmt, "insert into Scheduled_Jobs (job)"
+                 " select job from schedule "
+                 " where start = '-1' and interval > 0 ");
 #ifdef DEBUG 
         logmsg(sql_stmt);        
 #endif        
@@ -437,20 +447,45 @@ int main(int argc, char** argv) {
         do_sql(sql_stmt);
 //
 // Case 4: Jobs that run frequently - increment "start" by "interval" minutes 
-// 
-        sprintf (sql_stmt, "insert into messagebuffer (jobno,seq,node,channel,value)"
-                 " select a.jobno, a.seq, a.node, a.channel, a.value from job_v a, schedule b "
-                 "  where a.jobno = b.jobno and datetime(b.start) <= datetime('now','localtime') and interval > 0 ");
+//
+        sprintf (sql_stmt, "insert into Scheduled_Jobs (job)"
+                 " select job from schedule"
+                 "  where datetime(start) <= datetime('now','localtime') and interval > 0 ");
 #ifdef DEBUG 
         logmsg(sql_stmt);        
 #endif        
         do_sql(sql_stmt);
+/*
+        sprintf (sql_stmt, "insert into messagebuffer (job,seq,node,channel,value)"
+                 " select a.job, a.seq, a.node, a.channel, a.value from job a, schedule b "
+                 "  where a.job = b.job and datetime(b.start) <= datetime('now','localtime') and interval > 0 ");
+#ifdef DEBUG 
+        logmsg(sql_stmt);        
+#endif        
+        do_sql(sql_stmt);
+*/		
         sprintf (sql_stmt, "update schedule set start = datetime(start, '+'||interval||' minutes') "
                            "where datetime(start) <= datetime('now','localtime') and interval > 0 "); 
 #ifdef DEBUG 
         logmsg(sql_stmt);        
 #endif        
         do_sql(sql_stmt);
+// Put all Jobentries into messagebuffer
+        sprintf (sql_stmt, "insert into messagebuffer (job,seq,node,channel,value)"
+                 "  select job, seq, node, channel, value from Scheduled_messages ");
+#ifdef DEBUG 
+        logmsg(sql_stmt);        
+#endif        
+        do_sql(sql_stmt);
+// Delete all entries in Scheduled_Jobs, we dont need them any more
+        sprintf (sql_stmt, " delete from Scheduled_Jobs ");
+#ifdef DEBUG 
+        logmsg(sql_stmt);        
+#endif        
+        do_sql(sql_stmt);
+
+		
+		
 //
 // End Dispatcher
 //
@@ -462,9 +497,9 @@ int main(int argc, char** argv) {
 //
       if ( orderloopcount == 0 ) {
         if (ordersqlexeccount > 30 || ordersqlrefresh) {
-          // set all the Jobno to unused (-1) 
-          for (int i=0; i<5; i++) { order[i].Jobno = 0; }
-          sprintf (sql_stmt, "select Jobno, aseq, node, channel, value from message2send LIMIT 5 ");
+          // set all the Job to unused (-1) 
+          for (int i=0; i<5; i++) { order[i].Job = 0; }
+          sprintf (sql_stmt, "select Job, aseq, node, channel, value from message2send LIMIT 5 ");
           rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
           if ( rc != SQLITE_OK) {
             logmsg(err_prepare);
@@ -474,7 +509,7 @@ int main(int argc, char** argv) {
           int i=0;
           while (sqlite3_step(stmt) == SQLITE_ROW) {
             if ( i < 5) {
-              order[i].Jobno = sqlite3_column_int (stmt, 0);
+              order[i].Job = sqlite3_column_int (stmt, 0);
               order[i].seq = sqlite3_column_int (stmt, 1);
               char nodebuf[10];
               sprintf(nodebuf,"%s",sqlite3_column_text (stmt, 2));
@@ -496,9 +531,9 @@ int main(int argc, char** argv) {
         ordersqlexeccount++;
         int i=0;
         while (i<5) {
-          if (order[i].Jobno) {
+          if (order[i].Job) {
             txheader.from_node = 0;
-            payload.Jobno = order[i].Jobno;
+            payload.Job = order[i].Job;
             payload.seq = order[i].seq;
             txheader.to_node  = order[i].to_node;
             txheader.type  = order[i].channel;
@@ -506,8 +541,8 @@ int main(int argc, char** argv) {
             network.write(txheader,&payload,sizeof(payload));
 #ifdef DEBUG 
             char debug[300];
-            sprintf(debug, DEBUGSTR "Send: Channel: %u from Node: %o to Node: %o Jobno %d Seq %d Value %f "
-                         , txheader.type, txheader.from_node, txheader.to_node, payload.Jobno, payload.seq, payload.value);
+            sprintf(debug, DEBUGSTR "Send: Channel: %u from Node: %o to Node: %o Job %d Seq %d Value %f "
+                         , txheader.type, txheader.from_node, txheader.to_node, payload.Job, payload.seq, payload.value);
             logmsg(debug);       
 #endif        
           }
@@ -520,7 +555,7 @@ int main(int argc, char** argv) {
 //
 //  end orderloop 
 //
-      if (! order[0].Jobno) usleep(100000);
+      if (! order[0].Job) usleep(100000);
     } // while(1)
   } 
   return 0;
