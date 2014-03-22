@@ -1,7 +1,7 @@
 <h1>Wiki for Sensorhub</h1>
 
 <h2>Sensorhub in a nut shell - just a very basic documentation</h2>
-<p><a href=sensorhub_d_architektur.html>For a more detailed german documentation</a></p>
+<p><a href=sensorhub_d_allgemein.html >For a more detailed german documentation</a></p>
 <p>- What do you need:</p>
 <pre>
 1) A server ( i took the raspberry pi )
@@ -37,16 +37,13 @@ Server:
 4a) you can control this service with "sudo service sensorhub <option>" option is one of "start" "stop" "clearlog"
 5) configure the database, setup webpage, ...
 
-Node:
 1) take some hardware and build it together
 2) take a template from arduino folder and change it to your needs
 3) programm the node using a USBASP adapter (Details here: http://www.fischl.de/usbasp/)
 
 Webcontent:
 you will find a simple weatherstation (german only) as a sample in the html folder.
-To display the graphics you also have to put files in the folder cgi-bin in the cgi dir of your werbserver.
-"perl" must be installed with "gd" library.
-</pre>
+"php" must be installed with "gd" library.
 
 Details:
 
@@ -118,77 +115,4 @@ Column "Value"
   The value to delivered to the sensor, always as float.
 
 
-
-
-Äderungen:
-Master ümmt komplette Steuerung!
-Client horcht alle X Sekunden ins Netzwerk, sonst Lowpowerstate.
-
-Anforderung an Client zum Aufwachen:
-Master sendet solange eine Message (type=99, Sensor=0, value=0 ) an den Client bis dieser eine Quittung schickt.
-Client schickt eine Quittung (type=99, Sensor=0, value=0 ) an den Master und bleibt im Empfangsmode.
-
-Anforderung an Client Weiterschlafen (Ende Aufwachen):
-Master sendet solange eine Message (type=98, Sensor=0, value=0 ) an den Client bis dieser eine Quittung schickt.
-Client schickt eine Quittung (type=98, Sensor=0, value=0 ) an den Master und bleibt im Empfangsmode.
- 
-
-
-
-
-Header Types:
- 0 : Nicht benutzt
-
-By default implemented in sensorhub:
- 1...10 : Reserviert fü Sensoren auf dem Node (Value = Messwert)
-51...60 : Reserviert fügäe auf dem Node ( Value = einzustellender Wert )
-
-Used by system sensorhub only
-101: Battery Voltage: Node sends his battery voltage in value
-
-111: Sleeptimer (interval) for node in Value also starts sleepmode
-112: Radio power when sleep: 0: power down; 1 power up;
-
-117: Wakes up the node, sleep disabled
-
-119: Initsignal of the Node : Master sends configuration back. when finished master sends message of this type.
-
-Tabellen dazu:
-node_act_val:
-[node]
-[type]
-[value]
-
-node_def_val:
-[node]
-[type]
-[value]
-
-[messagebuffer]
-[node]
-[type]
-[value]
-
-
-TestSQL:
-
-create table messagebuffer (orderno INT, seq INT, status INT DEFAULT 0, node TEXT, type INT, i_value INT, f_value FLOAT, PRIMARY KEY(orderno, seq));
-
-insert into messagebuffer (orderno, seq, node, type, i_value, f_value) values (1,1,'4', 99, 0, 0);
-insert into messagebuffer (orderno, seq, node, type, i_value, f_value) values (1,2,'4', 21, 1, 0);
-insert into messagebuffer (orderno, seq, node, type, i_value, f_value) values (1,3,'4', 98, 0, 0);
-
-insert into messagebuffer (orderno, seq, node, type, i_value, f_value) values (2,1,'3', 99, 1, 0);
-insert into messagebuffer (orderno, seq, node, type, i_value, f_value) values (2,2,'3', 21, 1, 0);
-insert into messagebuffer (orderno, seq, node, type, i_value, f_value) values (2,3,'3', 98, 1, 0);
-
-create view message2send as select orderno, min(seq), node, type, i_value, f_value from messagebuffer where status = 0 group by orderno;
-
-update messagebuffer set status = 1 where orderno=1 and seq=1;
-
-
-CREATE TABLE schedule (node text, type int, value real, start , interval, primary key (node, type));
-select * from schedule where datetime(start) < datetime('now', 'localtime');
-update schedule set start = datetime(start, '+1 day') where datetime(start) < datetime('now', 'localtime');
-
-
+</pre>
