@@ -25,6 +25,7 @@ Added Web-GUI (German only)
 
 
 
+
 */
 #define DEBUG 1
 #define DBNAME "/var/database/sensorhub.db"
