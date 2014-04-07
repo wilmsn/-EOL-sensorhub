@@ -8,7 +8,7 @@ Look for this lines: //****
 // Define a valid radiochannel here
 #define RADIOCHANNEL 90
 // This node: Use octal numbers starting with "0": "041" is child 4 of node 1
-#define NODE 03  
+#define NODE 011  
 // The CE Pin of the Radio module
 #define RADIO_CE_PIN 10
 // The CS Pin of the Radio module
@@ -65,8 +65,12 @@ RF24NetworkHeader rxheader;
 RF24NetworkHeader txheader(0);
 
 unsigned int sleeptime = 0;
-boolean init_finished = false;
+boolean got_msg_111 = false;
+boolean got_msg_112 = false;
+boolean got_msg_119 = false;
 boolean radio_always_on = false;
+boolean network_busy = false;
+int network_busy_count = 0;
 int loopcount=0;
 int loopcountmax = 9;
 
@@ -99,13 +103,24 @@ void setup(void) {
 //  Sleepy::loseSomeTime(1000);
   myGLCD.clrScr();
   sensors.begin(); // IC Default 9 bit. If you have troubles consider upping it 12. Ups the delay giving the IC more time to process the temperature measurement
+  sensors.requestTemperatures(); // Send the command to get temperatures
+  Sleepy::loseSomeTime(100);
+  float temp=sensors.getTempCByIndex(0);
+  int temp_i=(int)temp;
+  int temp_dez_i=temp*10-temp_i*10;
+  myGLCD.setFont(BigNumbers);
+  myGLCD.printNumI(temp_i, 10, 0);
+  myGLCD.drawRect(40,20,43,23);
+  myGLCD.printNumI(temp_dez_i, 45, 0);
+  myGLCD.drawRect(61,2,64,5);
+  myGLCD.update();
   //****
   // end aditional init
   network.begin(RADIOCHANNEL, NODE);
   radio.setDataRate(RF24_250KBPS);
 //    Serial.println("Init1:");    
   // initialisation beginns: set sleeptime
-  while ( ! init_finished ) {
+  while ( ! (got_msg_111 && got_msg_112 && got_msg_119) ) {
 //       Serial.println("Init_not_finished");    
     // Ask the master for initilisation
     if ( i > 10 ) {
@@ -126,37 +141,26 @@ void setup(void) {
       mode_init_tx=false;
       switch (rxheader.type) {
         case 119: {
-          if ( sleeptime > 0 ) init_finished=true;
+          got_msg_119=true;
           mode = sleep;
           break; }
         case 112: {
           radio_always_on = (payload.value > 0.5);
           mode = sleep;
+          got_msg_112=true;
           break; }
         case 111: {
         // Init des Sleeptimers
           sleeptime=payload.value;
           txheader.type=111;
           network.write(txheader,&payload,sizeof(payload));
+          got_msg_111=true;
           break; }
       }
     }
     i++;
-    if ( i > 100 ) { mode_init_tx = true; digitalWrite(STATUSLED,STATUSLED_OFF); }
+    if ( i > 100 ) { mode_init_tx = true;  }
   }
-  sensors.requestTemperatures(); // Send the command to get temperatures
-  float temp=sensors.getTempCByIndex(0);
-  int temp_i=(int)temp;
-  int temp_dez_i=temp*10-temp_i*10;
-  myGLCD.setFont(BigNumbers);
-  myGLCD.printNumI(temp_i, 10, 0);
-  myGLCD.drawRect(40,20,43,23);
-  myGLCD.printNumI(temp_dez_i, 45, 0);
-  myGLCD.drawRect(61,2,64,5);
-//  myGLCD.drawLine(0,26,84,26);
-//  myGLCD.drawLine(42,26,42,48);
-//  myGLCD.drawLine(0,38,84,38);
-  myGLCD.update();
   digitalWrite(STATUSLED,STATUSLED_OFF); 
 //      Serial.println("Init: finished");    
 
@@ -203,29 +207,36 @@ void print_field(float val, int field) {
 }
 
 void loop(void) {
+  float temp;
 //  digitalWrite(STATUSLED,STATUSLED_ON); 
+  if (network.update()) {
+    network_busy = true;
+    network_busy_count = 1000; 
+  } 
+  if ( ! network_busy ) {
+    sensors.requestTemperatures(); // Send the command to get temperatures
+    temp=sensors.getTempCByIndex(0);
+    int temp_i=(int)temp;
+    int temp_dez_i=temp*10-temp_i*10;
+    myGLCD.setFont(BigNumbers);
+    myGLCD.printNumI(temp_i, 10, 0);
+    myGLCD.drawRect(40,20,43,23);
+    myGLCD.printNumI(temp_dez_i, 45, 0);
+    myGLCD.drawRect(61,2,64,5);
+    myGLCD.update();
+  }
   Sleepy::loseSomeTime(100);
   network.update();
   if ( network.available() ) {
     RF24NetworkHeader header;    
     network.read(header,&payload,sizeof(payload));
     // stay longer awake and listen 3 seconds
-    loopcountmax=30;
+    loopcountmax=100;
     switch (header.type) {
       case 1: {
         txheader.type=1;
         //****
         // insert here: payload.value=[result from sensor] 
-        sensors.requestTemperatures(); // Send the command to get temperatures
-        float temp=sensors.getTempCByIndex(0);
-        int temp_i=(int)temp;
-        int temp_dez_i=temp*10-temp_i*10;
-        myGLCD.setFont(BigNumbers);
-        myGLCD.printNumI(temp_i, 10, 0);
-        myGLCD.drawRect(40,20,43,23);
-        myGLCD.printNumI(temp_dez_i, 45, 0);
-        myGLCD.drawRect(61,2,64,5);
-        myGLCD.update();
         payload.value=temp;
         network.write(txheader,&payload,sizeof(payload));
 //   Serial.println("Temp: ");
@@ -346,8 +357,8 @@ void loop(void) {
     }
 //    network.write(txheader,&payload,sizeof(payload));
   }
-  if (loopcount > loopcountmax) {
-//    digitalWrite(STATUSLED,STATUSLED_OFF); 
+  Sleepy::loseSomeTime(100);
+  if ( ! network_busy ) {
     switch ( mode ) {
       case sleep:
         if ( ! radio_always_on ) radio.powerDown();
@@ -355,13 +366,11 @@ void loop(void) {
         radio.powerUp();
         break;
       case listen_radio:
-        // nothing do do here  
+          // nothing do do here  
         break;
     }
-    loopcountmax=5;
-    loopcount=0;
+  } else {
+    network_busy_count--;
+    network_busy = network_busy_count < 1; 
   }
-  loopcount++;
-// Serial.println("Ende Loop ");
-//     Serial.println(payload.value);        
 }

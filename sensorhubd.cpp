@@ -12,14 +12,13 @@ V0.2:
 Changed the delivery
 Master takes control over everything
 Node wakes up in a defined interval and listens into the network for something to do
-Database structure changed - not com�atible with V0.1 
+Database structure changed - not comüatible with V0.1 
 V0.3:
 Small changes in database structure
 Added Web-GUI (German only)
 V0.4:
-Database structure extended
-Added Actors
-
+Database structure changed and extended - not comüatible with V0.3 
+Added actors
 
 
 
@@ -228,13 +227,40 @@ void del_messageentry(uint16_t Job, uint16_t seq) {
   ordersqlrefresh=true;
 }
 
+void check_trigger(float last_val, float akt_val, int sensor) {
+  int edge; // 0=> falling; 1=> rising
+  if ( akt_val >= last_val) { edge = 1;  } else { edge = 0;  }  
+  // check if there is a trigger for this case
+  
+  
+}
 
 void store_value(uint16_t job, uint16_t seq, float val) {
-  char sql_stmt[300];            
-  sprintf(sql_stmt,"insert or replace into sensordata (sensor, year, month, day, hour, value) "
+  char sql_stmt[300];
+  float last_val;
+  int sensor;
+  sprintf(sql_stmt,"select max(utime), sensor, value from sensordata where sensor= "
+                   "(select id from job where job = %u and seq = %u ",job, seq);              
+  int rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
+  if ( rc != SQLITE_OK) {
+    logmsg(err_prepare);
+    logmsg(sql_stmt);
+    log_sqlite3_errstr(rc);
+  }
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    last_val = sqlite3_column_double (stmt, 2);
+    sensor  = sqlite3_column_int (stmt, 1);
+  }
+  rc=sqlite3_finalize(stmt);
+  if ( rc != SQLITE_OK) {
+    logmsg(err_prepare);
+    logmsg(sql_stmt);
+    log_sqlite3_errstr(rc);
+  }
+  check_trigger(last_val, val, sensor);
+  sprintf(sql_stmt,"insert or replace into sensordata (sensor, utime, value) "
                    "select id, "
-                   "strftime('%%Y', datetime('now','localtime')), strftime('%%m', datetime('now','localtime')), "
-                   "strftime('%%d', datetime('now','localtime')), strftime('%%H', datetime('now','localtime')), %f "
+                   "strftime('%%s', datetime('now','localtime')), %f "
                    " from job "
                    "where job = %u and seq = %u ", val, job, seq);
 #ifdef DEBUG 
@@ -285,11 +311,21 @@ int main(int argc, char** argv) {
   delay(5);
   network.begin( 90, 0);
   radio.setDataRate(RF24_250KBPS);
+#ifdef DEBUG 
+  radio.printDetails();
+#endif        
   char sql_stmt[300];
   int rc = sqlite3_open("/var/database/sensorhub.db", &db);
   if (rc) {
     logmsg (err_opendb);
   } else {
+    // Start Cleanup
+    sprintf (sql_stmt, "delete from messagebuffer "); 
+#ifdef DEBUG 
+    logmsg(sql_stmt);        
+#endif        
+    do_sql(sql_stmt);
+    // End Cleanup	
     long int time_old=0;
     while(1) {
       network.update();
@@ -368,38 +404,73 @@ int main(int argc, char** argv) {
 
             break; }
           case 119: {
-            // Init sequence ma be changed individuelly by order
+            // Init sequence may be changed individuelly by order
+            sprintf (sql_stmt, "select sleeptime, radiomode from node where node = '0%o' LIMIT 5 ",sendernode);
+            rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
+            if ( rc != SQLITE_OK) {
+              logmsg(err_prepare);
+              logmsg(sql_stmt);
+              log_sqlite3_errstr(rc);
+            }
+ 			int sleeptime=60000; // set defaults
+			int radiomode=0;
+            while (sqlite3_step(stmt) == SQLITE_ROW) {
+              sleeptime = sqlite3_column_int (stmt, 0);
+              radiomode = sqlite3_column_int (stmt, 1);			
+			}
             uint16_t sendernode=rxheader.from_node;
-            payload.value = 60000;
+            payload.value = sleeptime;
             RF24NetworkHeader txheader(sendernode,111);
-            network.write(txheader,&payload,sizeof(payload));
+            if (network.write(txheader,&payload,sizeof(payload)) ) {
 #ifdef DEBUG 
-            sprintf(debug, DEBUGSTR "Send of Node: %o Channel %u Value %f", sendernode, txheader.type, payload.value);
-            logmsg(debug);        
+            sprintf(debug, DEBUGSTR "Send to Node: %o Channel %u Value %f", sendernode, txheader.type, payload.value);
+            logmsg(debug);    
+            } else {
+            sprintf(debug, DEBUGSTR "Failed: Send to Node: %o Channel %u Value %f", sendernode, txheader.type, payload.value);
+            logmsg(debug);    			
 #endif        
             delay(100);
+			}
             txheader.type=112;
-            payload.value = 0;
-            network.write(txheader,&payload,sizeof(payload));
+            payload.value = radiomode;
+            if (network.write(txheader,&payload,sizeof(payload)) ) {
 #ifdef DEBUG 
-            sprintf(debug, DEBUGSTR "Send of Node: %o Channel %u Value %f", sendernode, txheader.type, payload.value);
+            sprintf(debug, DEBUGSTR "Send to Node: %o Channel %u Value %f", sendernode, txheader.type, payload.value);
             logmsg(debug);        
+            } else {
+            sprintf(debug, DEBUGSTR "Failed: Send to Node: %o Channel %u Value %f", sendernode, txheader.type, payload.value);
+            logmsg(debug);    			
 #endif        
             delay(100);
+			}
             txheader.type=119;
-            network.write(txheader,&payload,sizeof(payload));
+            if (network.write(txheader,&payload,sizeof(payload))) {
 #ifdef DEBUG 
-            sprintf(debug, DEBUGSTR "Send of Node: %o Channel %u Value %f", sendernode, txheader.type, payload.value);
+            sprintf(debug, DEBUGSTR "Send to Node: %o Channel %u Value %f", sendernode, txheader.type, payload.value);
             logmsg(debug);        
+            } else {
+            sprintf(debug, DEBUGSTR "Failed: Send to Node: %o Channel %u Value %f", sendernode, txheader.type, payload.value);
+            logmsg(debug);    			
 #endif        
+            }
             break; }
         }
-      } // network.available
+        orderloopcount=0;
+	  } // network.available
 //
 // Dispatcher: Look if the is anything to scedule
 //
       if ( time(0) > time_old + 59 ) {  // check every minute if we have jobs to scedule
         time_old = time(0);
+//
+// Cleanup old jobs that have not been executed during the last 10 minutes
+//
+        sprintf (sql_stmt, "delete from messagebuffer"
+                 " where strftime('%%s','now') - utime > 600 " );
+#ifdef DEBUG 
+        logmsg(sql_stmt);        
+#endif        
+        do_sql(sql_stmt);
 //
 // Case 1: Jobs that run  immeadeately (start = -1) and run only once (interval = -1)
 //
@@ -455,15 +526,6 @@ int main(int argc, char** argv) {
         logmsg(sql_stmt);        
 #endif        
         do_sql(sql_stmt);
-/*
-        sprintf (sql_stmt, "insert into messagebuffer (job,seq,node,channel,value)"
-                 " select a.job, a.seq, a.node, a.channel, a.value from job a, schedule b "
-                 "  where a.job = b.job and datetime(b.start) <= datetime('now','localtime') and interval > 0 ");
-#ifdef DEBUG 
-        logmsg(sql_stmt);        
-#endif        
-        do_sql(sql_stmt);
-*/		
         sprintf (sql_stmt, "update schedule set start = datetime(start, '+'||interval||' minutes') "
                            "where datetime(start) <= datetime('now','localtime') and interval > 0 "); 
 #ifdef DEBUG 
@@ -471,8 +533,8 @@ int main(int argc, char** argv) {
 #endif        
         do_sql(sql_stmt);
 // Put all Jobentries into messagebuffer
-        sprintf (sql_stmt, "insert into messagebuffer (job,seq,node,channel,value)"
-                 "  select job, seq, node, channel, value from Scheduled_messages ");
+        sprintf (sql_stmt, "insert into messagebuffer (job,seq,node,channel,value,utime)"
+                 "  select job, seq, node, channel, value,strftime('%%s','now') from Scheduled_messages ");
 #ifdef DEBUG 
         logmsg(sql_stmt);        
 #endif        
