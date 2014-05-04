@@ -1,22 +1,22 @@
 // Define a valid radiochannel here
 #define RADIOCHANNEL 90
 // This node: Use octal numbers starting with "0": "041" is child 4 of node 1
-#define NODE 014  
+#define NODE 014
 // The CE Pin of the Radio module
-#define RADIO_CE_PIN 9 
+#define RADIO_CE_PIN 10 
 // The CS Pin of the Radio module
-#define RADIO_CSN_PIN 10
+#define RADIO_CSN_PIN 9
 // The pin of the statusled
-#define STATUSLED 8
+#define STATUSLED 7
 #define STATUSLED_ON HIGH
 #define STATUSLED_OFF LOW
 
 // The outputpin for batterycontrol for the voltagedivider
-#define VMESS_OUT 0
+#define VMESS_OUT 5
 // Zhe inputpin for batterycontrol
-#define VMESS_IN A3
+#define VMESS_IN A0
 // the divider to get the real voltage from ADC
-#define VOLTAGEDIVIDER 1600
+#define VOLTAGEDIVIDER 1267
 
 // ------ End of configuration part ------------
 
@@ -76,8 +76,8 @@ void setup(void) {
   // end aditional init
   //####
   radio.begin();
-//  radio.setPALevel(RF24_PA_MAX);
-//  radio.setAutoAck(false);
+  radio.setPALevel(RF24_PA_MAX);
+  radio.setAutoAck(true);
   network.begin(RADIOCHANNEL, NODE);
   delay(200);
   radio.setDataRate(RF24_250KBPS);
@@ -93,7 +93,7 @@ void setup(void) {
       if ( ! network.write(txheader,&payload,sizeof(payload)) ) {
     }
     }
-    delay(20);
+    delay(100);
     if (network.update()) 
     {
     }
@@ -130,7 +130,7 @@ void setup(void) {
 float read_battery_voltage(void) {
   float vmess;
   digitalWrite(VMESS_OUT, HIGH);
-  Sleepy::loseSomeTime(500);      // Wait 100ms 
+  Sleepy::loseSomeTime(500);      // Wait 500ms 
   vmess=analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
@@ -141,9 +141,8 @@ float read_battery_voltage(void) {
 }
 
 void loop(void) {
-//  digitalWrite(STATUSLED,STATUSLED_ON);
-  digitalWrite(STATUSLED,HIGH); 
-//  Sleepy::loseSomeTime(10);      // Wait 100ms 
+  digitalWrite(STATUSLED,STATUSLED_ON);
+  Sleepy::loseSomeTime(50);      // Wait 50ms: Make sure to waist some time here! Otherwise the node does not respond! Reason unclear! 
   if (network.update()) {
     network_busy = true;
     my_millis = millis(); 
@@ -161,9 +160,8 @@ void loop(void) {
   if ( network.available() ) {
     network_busy = true;
     my_millis = millis(); 
-    RF24NetworkHeader header;    
-    network.read(header,&payload,sizeof(payload));
-    switch (header.type) {
+    network.read(rxheader,&payload,sizeof(payload));
+    switch (rxheader.type) {
       case 1:
         txheader.type=1;
         //****
@@ -256,9 +254,7 @@ void loop(void) {
         break;     
     }
   }
-//  digitalWrite(STATUSLED,STATUSLED_OFF); 
-  digitalWrite(STATUSLED,LOW); 
-//  Sleepy::loseSomeTime(100);
+  digitalWrite(STATUSLED,STATUSLED_OFF); 
   if ( ! network_busy ) {
     switch ( mode ) {
       case sleep:
