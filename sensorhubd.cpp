@@ -239,8 +239,7 @@ void store_value(uint16_t job, uint16_t seq, float val) {
   char sql_stmt[300];
   float last_val;
   int sensor;
-  sprintf(sql_stmt,"select max(utime), sensor, value from sensordata where sensor= "
-                   "(select id from job where job = %u and seq = %u ",job, seq);              
+  sprintf(sql_stmt,"select max(utime), sensor, value from sensordata where sensor = (select id from job where job = %u and seq = %u )",job, seq);              
   int rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
   if ( rc != SQLITE_OK) {
     logmsg(err_prepare);
