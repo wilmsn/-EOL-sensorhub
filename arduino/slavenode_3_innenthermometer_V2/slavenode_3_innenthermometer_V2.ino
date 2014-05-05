@@ -1,22 +1,30 @@
+/*
+A basic scetch for a slavenode
+It has everything inside that it needs to operate inside the network.
+Just add the specific code for your sensor(s)
+Look for this lines: //****
+
+*/
 // Define a valid radiochannel here
 #define RADIOCHANNEL 90
 // This node: Use octal numbers starting with "0": "041" is child 4 of node 1
-#define NODE 013
+#define NODE 03  
 // The CE Pin of the Radio module
-#define RADIO_CE_PIN 10 
+#define RADIO_CE_PIN 10
 // The CS Pin of the Radio module
 #define RADIO_CSN_PIN 9
 // The pin of the statusled
-#define STATUSLED 7
-#define STATUSLED_ON HIGH
-#define STATUSLED_OFF LOW
-
+#define STATUSLED 3
+#define STATUSLED_ON LOW
+#define STATUSLED_OFF HIGH
 // The outputpin for batterycontrol for the voltagedivider
-#define VMESS_OUT 5
-// Zhe inputpin for batterycontrol
+
+#define ONE_WIRE_BUS 8
+#define VMESS_OUT 1
 #define VMESS_IN A0
-// the divider to get the real voltage from ADC
-#define VOLTAGEDIVIDER 1267
+// Berechnung VOLTAGEDIVIDER
+// (1023 * R1) / ( (R1 + R2) * 1,1 )
+#define VOLTAGEDIVIDER 870
 
 // ------ End of configuration part ------------
 
@@ -24,6 +32,27 @@
 #include <RF24.h>
 #include <SPI.h>
 #include <JeeLib.h>  // Include library containing low power functions
+//****
+// some includes for your sensor(s) here
+//****
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#include <LCD5110_Graph.h>
+
+// Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
+OneWire oneWire(ONE_WIRE_BUS);
+ 
+// Pass our oneWire reference to Dallas Temperature.
+DallasTemperature sensors(&oneWire);
+
+LCD5110 myGLCD(7,6,5,2,4);
+
+extern uint8_t SmallFont[];
+extern uint8_t BigNumbers[];
+
+//####
+//end aditional includes
+//####
 
 // Structure of our payload
 struct payload_t
@@ -46,44 +75,58 @@ boolean got_msg_112 = false;
 boolean got_msg_119 = false;
 boolean radio_always_on = false;
 boolean network_busy = false;
+boolean antenna_shown = false;
 unsigned long my_millis = 0;
 unsigned int stayawaketime = 5000;
+float temp;
 
 ISR(WDT_vect) { Sleepy::watchdogEvent(); } // Setup for low power waiting
 
+// nRF24L01(+) radio attached using Getting Started board 
 // Usage: radio(CE_pin, CS_pin)
 RF24 radio(RADIO_CE_PIN,RADIO_CSN_PIN);
 
 // Network uses that radio
 RF24Network network(radio);
 
-
-
-
 void setup(void) {
+  int i = 0;
+  bool mode_init_tx=true;
   pinMode(STATUSLED, OUTPUT);     
+  digitalWrite(STATUSLED,STATUSLED_ON); 
   pinMode(VMESS_OUT, OUTPUT);  
   pinMode(VMESS_IN, INPUT);
   analogReference(INTERNAL);
   SPI.begin();
+  radio.begin();
   //****
   // put anything else to init here
   //****
+  myGLCD.InitLCD();
+  myGLCD.setContrast(65);
+  myGLCD.clrScr();
+  sensors.begin(); 
+  sensors.requestTemperatures(); 
+  Sleepy::loseSomeTime(100);
+  float temp=sensors.getTempCByIndex(0);
+  int temp_i=(int)temp;
+  int temp_dez_i=temp*10-temp_i*10;
+  myGLCD.setFont(BigNumbers);
+  myGLCD.printNumI(temp_i, 10, 0);
+  myGLCD.drawRect(40,20,43,23);
+  myGLCD.printNumI(temp_dez_i, 45, 0);
+  myGLCD.drawRect(61,2,64,5);
+  myGLCD.update();
 
   //####
   // end aditional init
   //####
-  radio.begin();
-  radio.setPALevel(RF24_PA_MAX);
-  radio.setAutoAck(true);
-  radio.setRetries(2,15);
   network.begin(RADIOCHANNEL, NODE);
-  delay(200);
   radio.setDataRate(RF24_250KBPS);
-  digitalWrite(STATUSLED,STATUSLED_ON); 
-  // initialisation beginns: set sleeptime
+  // initialisation of node beginns: set sleeptime
   while ( ! (got_msg_111 && got_msg_112 && got_msg_119) ) {
-    if ( millis() -  my_millis > 100) {
+    // Ask the master for initilisation
+    if ( (millis() -  my_millis) > 100) {
       txheader.type=119;
       payload.orderno=0;
       payload.seq=0;
@@ -91,30 +134,32 @@ void setup(void) {
       network.write(txheader,&payload,sizeof(payload));
       my_millis = millis();
     }
-    delay(100);
+    delay(20);
     network.update();
-    if ( network.available() ) {
+    if ( network.available() ) { 
       network.read(rxheader,&payload,sizeof(payload));
+      mode_init_tx=false;
       switch (rxheader.type) {
         case 119: {
-          mode = sleep;
           got_msg_119=true;
+          mode = sleep;
           break; }
         case 112: {
-          // radio on (=1) or off (=0) when sleep
           radio_always_on = (payload.value > 0.5);
           mode = sleep;
           got_msg_112=true;
           break; }
         case 111: {
         // Init des Sleeptimers
-          sleeptime=payload.value*10;
+          sleeptime=payload.value;
           txheader.type=111;
           network.write(txheader,&payload,sizeof(payload));
           got_msg_111=true;
           break; }
       }
     }
+    i++;
+    if ( i > 100 ) { mode_init_tx = true;  }
   }
   digitalWrite(STATUSLED,STATUSLED_OFF); 
 }
@@ -123,7 +168,7 @@ void setup(void) {
 float read_battery_voltage(void) {
   float vmess;
   digitalWrite(VMESS_OUT, HIGH);
-  delay(200);      // Wait 200ms 
+  Sleepy::loseSomeTime(100);      // Wait 100ms 
   vmess=analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
@@ -133,33 +178,119 @@ float read_battery_voltage(void) {
   return vmess / VOLTAGEDIVIDER;
 }
 
+void print_field(float val, int field) {
+  int x0, y0;
+  switch (field) {
+    case 1: x0=0; y0=25; break;
+    case 2: x0=41; y0=25; break;
+    case 3: x0=0; y0=36; break;
+    case 4: x0=41; y0=36; break;
+  }
+  for (int i=x0; i < x0+43; i++) {
+    for (int j=y0; j< y0+12; j++) {
+      myGLCD.clrPixel(i,j);
+    }
+  }
+  myGLCD.drawRect(x0,y0,x0+42,y0+11);
+  myGLCD.setFont(SmallFont);
+  if ( val > 100 ) {
+    if (val+0.5 > 1000) { 
+     myGLCD.printNumI(val, x0+9, y0+3);
+    } else {
+     myGLCD.printNumI(val, x0+12, y0+3);
+    }    
+  } else {
+    if (val >= 10) {
+      myGLCD.printNumF(val,1, x0+9, y0+3);
+    } else {
+      myGLCD.printNumF(val,2, x0+9, y0+3);
+    }      
+  }
+  myGLCD.update();
+}
+
+void draw_antenna(int x, int y) {
+   myGLCD.setPixel(x+2,y+0);
+   myGLCD.setPixel(x+7,y+0);
+   myGLCD.setPixel(x+1,y+1);
+   myGLCD.setPixel(x+8,y+1);
+   myGLCD.setPixel(x+0,y+2);
+   myGLCD.setPixel(x+3,y+2);
+   myGLCD.setPixel(x+6,y+2);
+   myGLCD.setPixel(x+9,y+2);
+   myGLCD.setPixel(x+0,y+3);
+   myGLCD.setPixel(x+2,y+3);
+   myGLCD.setPixel(x+7,y+3);
+   myGLCD.setPixel(x+9,y+3);
+   myGLCD.setPixel(x+0,y+4);
+   myGLCD.setPixel(x+2,y+4);
+   myGLCD.setPixel(x+4,y+4);
+   myGLCD.setPixel(x+5,y+4);
+   myGLCD.setPixel(x+7,y+4);
+   myGLCD.setPixel(x+9,y+4);
+   myGLCD.setPixel(x+0,y+5);
+   myGLCD.setPixel(x+2,y+5);
+   myGLCD.setPixel(x+4,y+5);
+   myGLCD.setPixel(x+5,y+5);
+   myGLCD.setPixel(x+7,y+5);
+   myGLCD.setPixel(x+9,y+5);
+   myGLCD.setPixel(x+0,y+6);
+   myGLCD.setPixel(x+3,y+6);
+   myGLCD.setPixel(x+4,y+6);
+   myGLCD.setPixel(x+5,y+6);
+   myGLCD.setPixel(x+6,y+6);
+   myGLCD.setPixel(x+9,y+6);
+   myGLCD.setPixel(x+1,y+7);
+   myGLCD.setPixel(x+4,y+7);
+   myGLCD.setPixel(x+5,y+7);
+   myGLCD.setPixel(x+8,y+7);
+   myGLCD.setPixel(x+4,y+8);
+   myGLCD.setPixel(x+5,y+8);
+   myGLCD.setPixel(x+4,y+9);
+   myGLCD.setPixel(x+5,y+9);
+   myGLCD.update();
+}   
+ 
+void wipe_antenna(int x, int y) {
+  for (int i=x; i<x+10; i++) {
+    for (int j=y; j<y+10; j++) {
+      myGLCD.clrPixel(i,j);
+    }
+  }
+   myGLCD.update();
+}  
+  
 void loop(void) {
-  digitalWrite(STATUSLED,STATUSLED_ON);
   if (network.update()) {
     network_busy = true;
-    my_millis = millis(); 
-  }
+    my_millis = millis();
+  } 
   if ( ! network_busy ) {
-  //*****************
-  // Put anything you want to run frequently here
-  //*****************
-  
-  
-  //#################
-  // END run frequently
-  //################# 
-  }  
+    sensors.requestTemperatures(); // Send the command to get temperatures
+    temp=sensors.getTempCByIndex(0);
+    int temp_i=(int)temp;
+    int temp_dez_i=temp*10-temp_i*10;
+    myGLCD.setFont(BigNumbers);
+    myGLCD.printNumI(temp_i, 10, 0);
+    myGLCD.drawRect(40,20,43,23);
+    myGLCD.printNumI(temp_dez_i, 45, 0);
+    myGLCD.drawRect(61,2,64,5);
+    myGLCD.update();
+  }
+//  if ( network.update() ) my_millis = millis();
   if ( network.available() ) {
     network_busy = true;
-    my_millis = millis(); 
+    my_millis = millis();
     network.read(rxheader,&payload,sizeof(payload));
+    // stay longer awake and listen 3 seconds
     switch (rxheader.type) {
-      case 1:
+      case 1: {
         txheader.type=1;
         //****
         // insert here: payload.value=[result from sensor] 
+        payload.value=temp;
         network.write(txheader,&payload,sizeof(payload));
-       break;
+       break; }
       case 2:
         txheader.type=2;
         //****
@@ -212,10 +343,38 @@ void loop(void) {
         txheader.type=21;
         //****
         // insert here: action = payload.value
-        if ( payload.value > 0.5 ) {
-          digitalWrite(7,HIGH); 
+        print_field(payload.value,1);
+        network.write(txheader,&payload,sizeof(payload));
+       break;
+      case 22:
+        txheader.type=22;
+        //****
+        // insert here: action = payload.value
+        print_field(payload.value,2);
+        network.write(txheader,&payload,sizeof(payload));
+       break;
+      case 23:
+        txheader.type=23;
+        //****
+        // insert here: action = payload.value
+        print_field(payload.value,3);
+        network.write(txheader,&payload,sizeof(payload));
+       break;
+      case 24:
+        txheader.type=24;
+        //****
+        // insert here: action = payload.value
+        print_field(payload.value,4);
+        network.write(txheader,&payload,sizeof(payload));
+       break;
+      case 31:
+        txheader.type=31;
+        //****
+        // insert here: action = payload.value
+        if (payload.value > 0.5) {
+          digitalWrite(STATUSLED,STATUSLED_ON); 
         } else {
-          digitalWrite(7,LOW); 
+          digitalWrite(STATUSLED,STATUSLED_OFF); 
         }
         network.write(txheader,&payload,sizeof(payload));
        break;
@@ -227,7 +386,7 @@ void loop(void) {
         break;      
       case 111:  
       // sleeptimer
-        if (payload.value > 0) sleeptime=payload.value*10;
+        if (payload.value > 0) sleeptime=payload.value;
         mode=sleep;
         txheader.type=111;
         network.write(txheader,&payload,sizeof(payload));
@@ -235,7 +394,7 @@ void loop(void) {
       case 112:
       // radio on (=1) or off (=0) when sleep
         txheader.type=112;
-        radio_always_on = payload.value > 0.5;
+        if (payload.value > 0.5) radio_always_on = true; else radio_always_on = false;
         network.write(txheader,&payload,sizeof(payload));
         break;                
       case 117: 
@@ -246,21 +405,21 @@ void loop(void) {
         break;     
     }
   }
-  digitalWrite(STATUSLED,STATUSLED_OFF); 
   network_busy = (millis() - my_millis) < stayawaketime; 
   if ( ! network_busy ) {
+    wipe_antenna(74,0);
     switch ( mode ) {
       case sleep:
         if ( ! radio_always_on ) radio.powerDown();
         Sleepy::loseSomeTime(sleeptime);
         if ( ! radio_always_on ) radio.powerUp();
-        Sleepy::loseSomeTime(1000); // Wait some time to get messages on the radio
         break;
       case listen_radio:
           // nothing do do here  
         break;
     }
   } else {
+    if (! antenna_shown) draw_antenna(74,0);
     Sleepy::loseSomeTime(100); // Wait some time befor starting the next loop
   }
 }
