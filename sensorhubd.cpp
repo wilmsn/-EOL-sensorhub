@@ -17,7 +17,7 @@ V0.3:
 Small changes in database structure
 Added Web-GUI (German only)
 V0.4:
-Database structure changed and extended - not comüatible with V0.3 
+Database structure changed and extended - not compatible with V0.3 
 Added actors
 
 
@@ -301,7 +301,7 @@ int getparentnodeadr(int nodeadr) {
 
 
 int main(int argc, char** argv) {
-	order_t order[7]; // we do not handle more than 6 orders -> 6 subnodes each one message at one time
+	order_t order[7]; // we do not handle more than 6 orders (one per subnode 1...6) at one time
 	for (int i=1; i<7; i++) { // init order array
 		order[i].Job = 0;
 		order[i].seq = 0;
@@ -563,78 +563,73 @@ int main(int argc, char** argv) {
 //
 // Orderloop: Tell the nodes what they have to do
 //
-      if ( orderloopcount == 0 ) {
-        if (ordersqlexeccount > 30 || ordersqlrefresh) {
-			// set unused Job to zero (=0) 
-			for (int i=1; i<7; i++) { //order[i].Job = 0; }
-				sprintf (sql_stmt, "select job, seq, node, channel, value from messagebuffer where substr(Node,length(node),1) = '%d' order by CAST(node as integer) LIMIT 1 ",i);
-          rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
-          if ( rc != SQLITE_OK) {
-            logmsg(err_prepare);
-            logmsg(sql_stmt);
-            log_sqlite3_errstr(rc);
-          }
-			//int i=0;
-				if(sqlite3_step(stmt) == SQLITE_ROW) {
-			//	if ( i < 5) {
-					order[i].Job = sqlite3_column_int (stmt, 0);
-					order[i].seq = sqlite3_column_int (stmt, 1);
-					char nodebuf[10];
-					sprintf(nodebuf,"%s",sqlite3_column_text (stmt, 2));
-					order[i].to_node  = getnodeadr(nodebuf);
-					order[i].channel  = sqlite3_column_int (stmt, 3);
-					order[i].value = sqlite3_column_double (stmt, 4);
-             // i++;
-				} else {
-					order[i].Job = 0;
+			if ( orderloopcount == 0 ) {
+				if (ordersqlexeccount > 30 || ordersqlrefresh) {
+					for (int i=0; i<7; i++) {
+						sprintf (sql_stmt, "select job, seq, node, channel, value from messagebuffer where substr(Node,length(node),1) = '%d' order by CAST(node as integer) LIMIT 1 ",i);
+						rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
+						if ( rc != SQLITE_OK) {
+							logmsg(err_prepare);
+							logmsg(sql_stmt);
+							log_sqlite3_errstr(rc);
+						}
+						order[i].Job = 0;
+						if(sqlite3_step(stmt) == SQLITE_ROW) {
+							order[i].Job = sqlite3_column_int (stmt, 0);
+							order[i].seq = sqlite3_column_int (stmt, 1);
+							char nodebuf[10];
+							sprintf(nodebuf,"%s",sqlite3_column_text (stmt, 2));
+							order[i].to_node  = getnodeadr(nodebuf);
+							order[i].channel  = sqlite3_column_int (stmt, 3);
+							order[i].value = sqlite3_column_double (stmt, 4);
+						}
+						rc=sqlite3_finalize(stmt);
+						if ( rc != SQLITE_OK) {
+							logmsg(err_prepare);
+							logmsg(sql_stmt);
+							log_sqlite3_errstr(rc);
+						}
+						ordersqlexeccount=0;
+						ordersqlrefresh=false;
+					}
 				}
-			}
-          rc=sqlite3_finalize(stmt);
-          if ( rc != SQLITE_OK) {
-            logmsg(err_prepare);
-            logmsg(sql_stmt);
-            log_sqlite3_errstr(rc);
-          }
-          ordersqlexeccount=0;
-          ordersqlrefresh=false;
-        }
-        ordersqlexeccount++;
-        int i=1;
-        while (i<7) {
-          if (order[i].Job) {
-            txheader.from_node = 0;
-            payload.Job = order[i].Job;
-            payload.seq = order[i].seq;
-            txheader.to_node  = order[i].to_node;
-            txheader.type  = order[i].channel;
-            payload.value = order[i].value;
-            if (network.write(txheader,&payload,sizeof(payload))) {
+				ordersqlexeccount++;
+				int i=1;
+				while (i<7) {
+					if (order[i].Job) {
+						txheader.from_node = 0;
+						payload.Job = order[i].Job;
+						payload.seq = order[i].seq;
+						txheader.to_node  = order[i].to_node;
+						txheader.type  = order[i].channel;
+						payload.value = order[i].value;
+						if (network.write(txheader,&payload,sizeof(payload))) {
 #ifdef DEBUG 
-				char debug[300];
-				sprintf(debug, DEBUGSTR "Send: Channel: %u from Node: %o to Node: %o Job %d Seq %d Value %f "
-                         , txheader.type, txheader.from_node, txheader.to_node, payload.Job, payload.seq, payload.value);
-				logmsg(debug); 
-			} else {		
-				char debug[300];
-				sprintf(debug, DEBUGSTR "Failed: Send: Channel: %u from Node: %o to Node: %o Job %d Seq %d Value %f "
-                         , txheader.type, txheader.from_node, txheader.to_node, payload.Job, payload.seq, payload.value);
-				logmsg(debug); 
+							char debug[300];
+							sprintf(debug, DEBUGSTR "Send: Channel: %u from Node: %o to Node: %o Job %d Seq %d Value %f "
+									, txheader.type, txheader.from_node, txheader.to_node, payload.Job, payload.seq, payload.value);
+							logmsg(debug); 
+						} else {		
+							char debug[300];
+							sprintf(debug, DEBUGSTR "Failed: Send: Channel: %u from Node: %o to Node: %o Job %d Seq %d Value %f "
+									, txheader.type, txheader.from_node, txheader.to_node, payload.Job, payload.seq, payload.value);
+							logmsg(debug); 
 #endif      
-			}  
-          }
-          i++; 
-        }
-      } // /orderloopcount
-      orderloopcount++;
-      if ( orderloopcount > 200 ) {  orderloopcount=0; }
-      usleep(1000); 
+						}  
+					}
+					i++; 
+				}
+			} // /orderloopcount
+			orderloopcount++;
+			if ( orderloopcount > 200 ) {  orderloopcount=0; }
+			usleep(1000); 
 //
 //  end orderloop 
 //
       if (! (order[1].Job || order[2].Job || order[3].Job || order[4].Job || order[5].Job || order[6].Job)) usleep(100000);
-    } // while(1)
-  } 
-  return 0;
+		} // while(1)
+	} 
+	return 0;
 }
 
 
