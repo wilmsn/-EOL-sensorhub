@@ -567,7 +567,7 @@ int main(int argc, char** argv) {
         if (ordersqlexeccount > 30 || ordersqlrefresh) {
 			// set unused Job to zero (=0) 
 			for (int i=1; i<7; i++) { //order[i].Job = 0; }
-				sprintf (sql_stmt, "select Job, aseq, node, channel, value from message2send_n%d LIMIT 1 ",i);
+				sprintf (sql_stmt, "select job, seq, node, channel, value from messagebuffer where substr(Node,length(node),1) = '%d' order by CAST(node as integer) LIMIT 1 ",i);
           rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
           if ( rc != SQLITE_OK) {
             logmsg(err_prepare);
