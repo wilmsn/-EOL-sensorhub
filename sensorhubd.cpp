@@ -204,24 +204,26 @@ void log_db_err(int rc, char *errstr, char *mysql) {
 }
 
 void do_sql(char *mysql) {
+    sqlite3_stmt *mystmt;   
 	int rc;
-	rc = sqlite3_prepare(db, mysql, -1, &stmt, 0 ); 
 #ifdef DEBUG 
     logmsg(info_exec_sql);        
     logmsg(mysql);        
 #endif        
+	rc = sqlite3_prepare(db, mysql, -1, &mystmt, 0 ); 
 	if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, mysql);
-	if (sqlite3_step(stmt) != SQLITE_DONE)  log_db_err(rc, err_execute, mysql);
-	rc=sqlite3_finalize(stmt);
-	if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, mysql);
+    rc = sqlite3_step(mystmt);
+	if ( rc != SQLITE_DONE) log_db_err(rc, err_execute, mysql);
+	rc=sqlite3_finalize(mystmt);
+	if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, mysql);
 }
 
 void del_messageentry(uint16_t Job, uint16_t seq) {
-  char sql_stmt[300];            
-  sprintf(sql_stmt, " delete from messagebuffer where Job = %u and seq = %u "
-                  , Job, seq );
-  do_sql(sql_stmt);
-  ordersqlrefresh=true;
+	char sql_stmt[300];            
+	sprintf(sql_stmt, " delete from messagebuffer where Job = %u and seq = %u "
+					, Job, seq );
+	do_sql(sql_stmt);
+	ordersqlrefresh=true;
 }
 
 void check_trigger(float last_val, float akt_val, int sensor) {
@@ -244,7 +246,7 @@ void store_sensor_value(uint16_t job, uint16_t seq, float val) {
 		sensor  = sqlite3_column_int (stmt, 1);
 	}
 	rc=sqlite3_finalize(stmt);
-	if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, sql_stmt);
+	if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
 	check_trigger(last_val, val, sensor);
 	sprintf(sql_stmt,"insert or replace into sensordata (sensor, utime, value) "
 					"select id, "
@@ -264,33 +266,35 @@ void store_actor_value(uint16_t job, uint16_t seq, float val) {
 }
 
 int getnodeadr(char *node) {
-  int mynodeadr = 0;
-  bool err = false;
-  char t[5];
-  for ( int i = 0; (node[i] > 0) && (! err); i++ ) {
-    if ( mynodeadr > 0 ) mynodeadr = (mynodeadr << 3);
-    sprintf(t,"%c",node[i]); 
-    mynodeadr = mynodeadr + atoi(t);
-    err = (node[i] == '6' || node[i] == '7' || node[i] == '8' || node[i] == '9' || (( i > 0 ) && ( node[i] == '0' ))); 
-  }
-  if (err) mynodeadr = 0;
-  return mynodeadr;
+	int mynodeadr = 0;
+	bool err = false;
+	char t[5];
+	for ( int i = 0; (node[i] > 0) && (! err); i++ ) {
+		if ( mynodeadr > 0 ) mynodeadr = (mynodeadr << 3);
+		sprintf(t,"%c",node[i]); 
+		mynodeadr = mynodeadr + atoi(t);
+		err = (node[i] == '6' || node[i] == '7' || node[i] == '8' || node[i] == '9' || (( i > 0 ) && ( node[i] == '0' ))); 
+	}
+	if (err) mynodeadr = 0;
+	return mynodeadr;
 }
 
 int getparentnodeadr(int nodeadr) {
-  int parentnodeadr=-1;
-  if ( nodeadr > 0x7FFF ) parentnodeadr = 0;
-  else if ( nodeadr > 7*8*8*8 ) parentnodeadr = (nodeadr & 0x0FFF);
-  else if ( nodeadr > 7*8*8 ) parentnodeadr = (nodeadr & 0x01FF);
-  else if ( nodeadr > 7*8 ) parentnodeadr = (nodeadr & 0x003F);
-  else if ( nodeadr > 7 ) parentnodeadr = (nodeadr & 0x0007);
-  else parentnodeadr = 0;
-  return parentnodeadr;
+	int parentnodeadr=-1;
+	if ( nodeadr > 0x7FFF ) parentnodeadr = 0;
+	else if ( nodeadr > 7*8*8*8 ) parentnodeadr = (nodeadr & 0x0FFF);
+	else if ( nodeadr > 7*8*8 ) parentnodeadr = (nodeadr & 0x01FF);
+	else if ( nodeadr > 7*8 ) parentnodeadr = (nodeadr & 0x003F);
+	else if ( nodeadr > 7 ) parentnodeadr = (nodeadr & 0x0007);
+	else parentnodeadr = 0;
+	return parentnodeadr;
 }
 
 
 int main(int argc, char** argv) {
 	char debug[300];
+	int actor_jobno = 100;
+	int actor_seq;
 	order_t order[7]; // we do not handle more than 6 orders (one per subnode 1...6) at one time
 	for (int i=1; i<7; i++) { // init order array
 		order[i].Job = 0;
@@ -440,6 +444,26 @@ int main(int argc, char** argv) {
 						logmsg(debug);    			
 #endif        
 					}
+                    // Set the actors to its last known value
+					float last_val;
+					int mychannel;
+					actor_seq=1;	
+                    sprintf(sql_stmt, " select channel, b.value from actor a, actordata b where a.actor = b.actor and a.node = '0%o' ",	sendernode);				
+					int rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
+					if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, sql_stmt);
+					while (sqlite3_step(stmt) == SQLITE_ROW) {
+						mychannel  = sqlite3_column_int (stmt, 0);
+						last_val = sqlite3_column_double (stmt, 1);
+						char sql_stmt1[300];
+						sprintf(sql_stmt1, "insert into messagebuffer(job, seq , node, channel, value, priority) values (%d, %d, '0%o', %d, %f, 5)"
+										,actor_jobno, actor_seq, sendernode, mychannel, last_val);
+						do_sql(sql_stmt1);
+						actor_jobno++;
+						actor_seq++;
+					}
+					rc=sqlite3_finalize(stmt);
+					if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
+					if (actor_jobno > 199) actor_jobno = 100;
 				break; }
 			}
 			orderloopcount=0;
@@ -511,7 +535,7 @@ int main(int argc, char** argv) {
 		if ( orderloopcount == 0 ) {
 			if (ordersqlexeccount > 30 || ordersqlrefresh) {
 				for (int i=0; i<7; i++) {
-					sprintf (sql_stmt, "select job, seq, node, channel, value from messagebuffer where substr(Node,length(node),1) = '%d' order by CAST(node as integer) LIMIT 1 ",i);
+					sprintf (sql_stmt, "select job, seq, node, channel, value from messagebuffer where substr(Node,length(node),1) = '%d' order by CAST(node as integer), priority LIMIT 1 ",i);
 					rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
 					if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, sql_stmt);
 					order[i].Job = 0;
