@@ -293,8 +293,7 @@ int getparentnodeadr(int nodeadr) {
 
 int main(int argc, char** argv) {
 	char debug[300];
-	int actor_jobno = 100;
-	int actor_seq;
+	int init_jobno = 1;
 	order_t order[7]; // we do not handle more than 6 orders (one per subnode 1...6) at one time
 	for (int i=1; i<7; i++) { // init order array
 		order[i].Job = 0;
@@ -399,71 +398,68 @@ int main(int argc, char** argv) {
 				break; }
 				
 				case 119: {
-				// Init sequence may be changed individuelly by order
-					sprintf (sql_stmt, "select sleeptime, radiomode from node where node = '0%o' LIMIT 5 ",sendernode);
+				// Init via messagenuffer
+				// we do only one init at one time
+					uint16_t sendernode = rxheader.from_node;
+					int init_seq = 10;
+					// check th messagebuffer if there is still an init job remaining
+					int init_waiting_jobs; 
+					sprintf(sql_stmt,"select count(*) from messagebuffer where channel in (111,112,113,114,115,116,117,118,119) and priority = 1 and node = '0%o' ", sendernode);
 					rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
 					if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, sql_stmt);
-					int sleeptime=60000; // set defaults
-					int radiomode=0;
-					while (sqlite3_step(stmt) == SQLITE_ROW) {
-						sleeptime = sqlite3_column_int (stmt, 0);
-						radiomode = sqlite3_column_int (stmt, 1);			
-					}
-					uint16_t sendernode=rxheader.from_node;
-					payload.value = sleeptime;
-					RF24NetworkHeader txheader(sendernode,111);
-					if (network.write(txheader,&payload,sizeof(payload)) ) {
-#ifdef DEBUG 
-						sprintf(debug, DEBUGSTR "Send to Node: %o Channel %u Value %f", sendernode, txheader.type, payload.value);
-						logmsg(debug);    
+				    if (sqlite3_step(stmt) == SQLITE_ROW) {
+						init_waiting_jobs = sqlite3_column_int (stmt, 0);
 					} else {
-						sprintf(debug, DEBUGSTR "Failed: Send to Node: %o Channel %u Value %f", sendernode, txheader.type, payload.value);
-						logmsg(debug);    			
-#endif        
-					}
-					delay(100);
-					txheader.type=112;
-					payload.value = radiomode;
-					if (network.write(txheader,&payload,sizeof(payload)) ) {
-#ifdef DEBUG 
-						sprintf(debug, DEBUGSTR "Send to Node: %o Channel %u Value %f", sendernode, txheader.type, payload.value);
-						logmsg(debug);        
-					} else {
-						sprintf(debug, DEBUGSTR "Failed: Send to Node: %o Channel %u Value %f", sendernode, txheader.type, payload.value);
-						logmsg(debug);    			
-#endif        
-					}
-					delay(100);
-					txheader.type=119;
-					if (network.write(txheader,&payload,sizeof(payload))) {
-#ifdef DEBUG 
-						sprintf(debug, DEBUGSTR "Send to Node: %o Channel %u Value %f", sendernode, txheader.type, payload.value);
-						logmsg(debug);        
-					} else {
-						sprintf(debug, DEBUGSTR "Failed: Send to Node: %o Channel %u Value %f", sendernode, txheader.type, payload.value);
-						logmsg(debug);    			
-#endif        
-					}
-                    // Set the actors to its last known value
-					float last_val;
-					int mychannel;
-					actor_seq=1;	
-                    sprintf(sql_stmt, " select channel, b.value from actor a, actordata b where a.actor = b.actor and a.node = '0%o' ",	sendernode);				
-					int rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
-					if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, sql_stmt);
-					while (sqlite3_step(stmt) == SQLITE_ROW) {
-						mychannel  = sqlite3_column_int (stmt, 0);
-						last_val = sqlite3_column_double (stmt, 1);
-						char sql_stmt1[300];
-						sprintf(sql_stmt1, "insert into messagebuffer(job, seq , node, channel, value, priority) values (%d, %d, '0%o', %d, %f, 5)"
-										,actor_jobno, actor_seq, sendernode, mychannel, last_val);
-						do_sql(sql_stmt1);
-						actor_jobno++;
-						actor_seq++;
+						init_waiting_jobs = 0;
 					}
 					rc=sqlite3_finalize(stmt);
 					if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
-					if (actor_jobno > 199) actor_jobno = 100;
+					if ( init_waiting_jobs == 0) { 
+						sprintf (sql_stmt, "select sleeptime, radiomode from node where node = '0%o' LIMIT 1 ",sendernode);
+						rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
+						if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, sql_stmt);
+						double sleeptime=60000; // set defaults
+						double radiomode=0;
+						if (sqlite3_step(stmt) == SQLITE_ROW) {
+							sleeptime = sqlite3_column_double (stmt, 0);
+							radiomode = sqlite3_column_double (stmt, 1);			
+						}
+						rc=sqlite3_finalize(stmt);
+						if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
+						// Channel 111 sets sleeptime
+						sprintf(sql_stmt,"insert into messagebuffer(job,seq,node,channel,value, priority) values (%d,1,'0%o',111,%f,1)"
+								,init_jobno, sendernode, sleeptime);
+						do_sql(sql_stmt);
+						// Channel 112 sets radiomode
+						sprintf(sql_stmt,"insert into messagebuffer(job,seq,node,channel,value, priority) values (%d,2,'0%o',112,%f,1)"
+								,init_jobno, sendernode, radiomode);
+						do_sql(sql_stmt);
+						// Channel 119 sets init is finished
+						sprintf(sql_stmt,"insert into messagebuffer(job,seq,node,channel,value, priority) values (%d,3,'0%o',119,0,1)"
+								,init_jobno, sendernode);
+						do_sql(sql_stmt);
+						// Set the actors to its last known value
+						float last_val;
+						int mychannel;
+						sprintf(sql_stmt, " select channel, b.value from actor a, actordata b where a.actor = b.actor and a.node = '0%o' ",	sendernode);				
+						int rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
+						if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, sql_stmt);
+						while (sqlite3_step(stmt) == SQLITE_ROW) {
+							mychannel  = sqlite3_column_int (stmt, 0);
+							last_val = sqlite3_column_double (stmt, 1);
+							char sql_stmt1[300];
+							sprintf(sql_stmt1, "insert into messagebuffer(job, seq , node, channel, value, priority) values (%d, %d, '0%o', %d, %f, 5)"
+											,init_jobno, init_seq, sendernode, mychannel, last_val);
+							do_sql(sql_stmt1);
+							init_seq++;
+						}
+						rc=sqlite3_finalize(stmt);
+						if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
+						init_jobno++;
+						if ( init_jobno > 99 ) init_jobno = 1;
+						orderloopcount=0;
+						ordersqlrefresh=true;
+					}
 				break; }
 			}
 			orderloopcount=0;
@@ -547,6 +543,7 @@ int main(int argc, char** argv) {
 						order[i].to_node  = getnodeadr(nodebuf);
 						order[i].channel  = sqlite3_column_int (stmt, 3);
 						order[i].value = sqlite3_column_double (stmt, 4);
+						if ( order[i].channel == 111 || order[i].channel == 112 || order[i].channel == 119 ) del_messageentry(order[i].Job, order[i].seq);
 					}
 					rc=sqlite3_finalize(stmt);
 					if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
