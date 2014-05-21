@@ -59,6 +59,27 @@ case "$1" in
       log_end_msg 1
     fi
     ;;
+  restart)
+    echo -n "[....] Stopping sensorhub ..."
+    if [ "$SENSORHUBPID" ]; then
+      kill $SENSORHUBPID
+      date >> /var/log/sensorhubd.log
+      echo "Stopping sensorhubd via service sensorhub stop" >> /var/log/sensorhubd.log
+      log_end_msg $?
+    else
+      echo -n "not running ..."
+      log_end_msg 1
+    fi
+    echo -n "[....] Starting sensorhub "
+    SENSORHUBPID=`ps -efa | grep "/usr/bin/sensorhubd" | grep -v grep | cut -c 9-15`
+    if [ -z "$SENSORHUBPID" ]; then
+      /usr/bin/sensorhubd&
+      log_end_msg $?
+    else
+      echo -n "... already running with PID $SENSORHUBPID"
+      log_end_msg 1
+    fi
+    ;;
   *)
     echo "Usage: /etc/init.d/sensorhub {start|stop|clearlog}"
     exit 1

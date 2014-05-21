@@ -55,9 +55,13 @@ RF24NetworkHeader rxheader;
 RF24NetworkHeader txheader(0);
 
 unsigned int sleeptime = 0;
-boolean init_finished = false;
+boolean got_msg_111 = false;
+boolean got_msg_112 = false;
+boolean got_msg_119 = false;
 boolean radio_always_on = false;
-int loopcount=0;
+boolean network_busy = false;
+unsigned long my_millis = 0;
+
 
 ISR(WDT_vect) { Sleepy::watchdogEvent(); } // Setup for low power waiting
 
@@ -70,7 +74,6 @@ RF24Network network(radio);
 
 
 void setup(void) {
-  int i = 0;
   bool mode_init_tx=true;
   pinMode(STATUSLED, OUTPUT);     
   pinMode(VMESS_OUT, OUTPUT);  
@@ -78,47 +81,55 @@ void setup(void) {
   analogReference(INTERNAL);
   SPI.begin();
   radio.begin();
+  //****
+  // put anything else to init here
+  //****
+  Wire.begin();
+  bmp.begin();
+  //####
+  // end aditional init
+  //####
   network.begin(RADIOCHANNEL, NODE);
   radio.setDataRate(RF24_250KBPS);
-  digitalWrite(STATUSLED,HIGH); 
   // initialisation beginns: set sleeptime
-  while ( ! init_finished ) {
+  while ( ! (got_msg_111 && got_msg_112 && got_msg_119) ) {
     // Ask the master for initilisation
-    if ( i > 10 ) {
-      if (mode_init_tx) {
-        txheader.type=119;
-        payload.orderno=0;
-        payload.seq=0;
-        payload.value=0;
-        network.write(txheader,&payload,sizeof(payload));
-        i = 0;
-      }
+    if ( millis() -  my_millis > 100) {
+//      digitalWrite(STATUSLED,HIGH); 
+      txheader.type=119;
+      payload.orderno=0;
+      payload.seq=0;
+      payload.value=0;
+      network.write(txheader,&payload,sizeof(payload));
+      delay(500);
     }
     delay(20);
-    network.update();
+    for (int j=0;j<10;j++) {
+      if (network.update()) digitalWrite(STATUSLED,HIGH); 
+    }
     if ( network.available() ) { 
+      my_millis = millis();
       RF24NetworkHeader rxheader;
       network.read(rxheader,&payload,sizeof(payload));
-      mode_init_tx=false;
       switch (rxheader.type) {
         case 119: {
-          if ( sleeptime > 0 ) init_finished=true;
           mode = sleep;
+          got_msg_119=true;
           break; }
         case 112: {
           radio_always_on = (payload.value > 0.5);
           mode = sleep;
+          got_msg_112=true;
           break; }
         case 111: {
         // Init des Sleeptimers
           sleeptime=payload.value;
           txheader.type=111;
           network.write(txheader,&payload,sizeof(payload));
+          got_msg_111=true;
           break; }
       }
     }
-    i++;
-    if ( i > 100 ) { mode_init_tx = true; digitalWrite(STATUSLED,LOW); }
   }
   digitalWrite(STATUSLED,LOW); 
 }
@@ -139,13 +150,15 @@ float read_battery_voltage(void) {
 
 void loop(void) {
   digitalWrite(STATUSLED,HIGH); 
-//  delay(100);
-  Sleepy::loseSomeTime(100);
-  network.update();
+  if (network.update()) {
+      network_busy = true;
+      my_millis = millis(); 
+  }
   if ( network.available() ) {
+    network_busy = true;
+    my_millis = millis(); 
     RF24NetworkHeader header;    
     network.read(header,&payload,sizeof(payload));
-      Serial.print(header.from_node);
     switch (header.type) {
       case 1:
         txheader.type=1;
@@ -182,21 +195,22 @@ void loop(void) {
         network.write(txheader,&payload,sizeof(payload));
         break;     
     }
-//    network.write(txheader,&payload,sizeof(payload));
   }
-  if (loopcount > 30) {
-    digitalWrite(STATUSLED,LOW); 
+  digitalWrite(STATUSLED,LOW); 
+  Sleepy::loseSomeTime(100);
+  if ( network_busy ) {
+    network_busy = (millis() - my_millis) < 1000; 
+  } else {
     switch ( mode ) {
       case sleep:
         if ( ! radio_always_on ) radio.powerDown();
         Sleepy::loseSomeTime(sleeptime);
-        radio.powerUp();
+        if ( ! radio_always_on ) radio.powerUp();
+        Sleepy::loseSomeTime(1000);
         break;
       case listen_radio:
-        // nothing do do here  
+          // nothing do do here  
         break;
     }
-    loopcount=0;
   }
-  loopcount++;
 }

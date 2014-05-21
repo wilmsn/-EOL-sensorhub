@@ -1,29 +1,32 @@
 // Define a valid radiochannel here
 #define RADIOCHANNEL 90
 // This node: Use octal numbers starting with "0": "041" is child 4 of node 1
-#define NODE 015
+#define NODE 014
 // The CE Pin of the Radio module
 #define RADIO_CE_PIN 10 
 // The CS Pin of the Radio module
 #define RADIO_CSN_PIN 9
 // The pin of the statusled
-#define STATUSLED 7
-#define STATUSLED_ON HIGH
-#define STATUSLED_OFF LOW
+#define STATUSLED 8
+#define STATUSLED_ON LOW
+#define STATUSLED_OFF HIGH
 
 // The outputpin for batterycontrol for the voltagedivider
 #define VMESS_OUT 5
-// Zhe inputpin for batterycontrol
+// The inputpin for batterycontrol
 #define VMESS_IN A0
 // the divider to get the real voltage from ADC
 #define VOLTAGEDIVIDER 848
+#define VMESS_LICHT A2
+#define VMESS_SOLAR A1
+
 
 // ------ End of configuration part ------------
 
 #include <RF24Network.h>
 #include <RF24.h>
 #include <SPI.h>
-#include <JeeLib.h>  // Include library containing low power functions
+#include <LowPower.h>
 
 // Structure of our payload
 struct payload_t
@@ -35,21 +38,23 @@ struct payload_t
 
 payload_t payload;    
 
-enum mode_t { sleep, listen_radio } mode;
+enum mode_t { sleep_node, listen_radio } mode;
 
 RF24NetworkHeader rxheader;
 RF24NetworkHeader txheader(0);
 
 unsigned int sleeptime = 0;
+unsigned int initcounter = 0;
 boolean got_msg_111 = false;
 boolean got_msg_112 = false;
 boolean got_msg_119 = false;
 boolean radio_always_on = false;
 boolean network_busy = false;
-unsigned long my_millis = 0;
-unsigned int stayawaketime = 5000;
+//unsigned long my_millis = 0;
+unsigned int stayawakedefault = 20; // 5 seconds
+unsigned int stayawakeloopcount = 0;
 
-ISR(WDT_vect) { Sleepy::watchdogEvent(); } // Setup for low power waiting
+//ISR(WDT_vect) { Sleepy::watchdogEvent(); } // Setup for low power waiting
 
 // Usage: radio(CE_pin, CS_pin)
 RF24 radio(RADIO_CE_PIN,RADIO_CSN_PIN);
@@ -78,52 +83,55 @@ void setup(void) {
   radio.setAutoAck(true);
   radio.setRetries(2,15);
   network.begin(RADIOCHANNEL, NODE);
-  delay(200);
+//  delay(200);
   radio.setDataRate(RF24_250KBPS);
   digitalWrite(STATUSLED,STATUSLED_ON); 
   // initialisation beginns: set sleeptime
+  initcounter = 20;
   while ( ! (got_msg_111 && got_msg_112 && got_msg_119) ) {
-    if ( millis() -  my_millis > 100) {
+    if ( initcounter > 10) {
       txheader.type=119;
       payload.orderno=0;
       payload.seq=0;
       payload.value=0;
       network.write(txheader,&payload,sizeof(payload));
-      my_millis = millis();
+      initcounter=0;
     }
-    delay(100);
+    LowPower.powerDown(SLEEP_30MS, ADC_ON, BOD_ON); ; // Wait some time to get the voltage stable
     network.update();
     if ( network.available() ) {
       network.read(rxheader,&payload,sizeof(payload));
       switch (rxheader.type) {
         case 119: {
-          mode = sleep;
+          mode = sleep_node;
           got_msg_119=true;
           break; }
         case 112: {
           // radio on (=1) or off (=0) when sleep
           radio_always_on = (payload.value > 0.5);
-          mode = sleep;
+          mode = sleep_node;
           got_msg_112=true;
           break; }
         case 111: {
         // Init des Sleeptimers
-          sleeptime=payload.value*10;
+          sleeptime=payload.value;
           txheader.type=111;
+          payload.value=sleeptime;
           network.write(txheader,&payload,sizeof(payload));
           got_msg_111=true;
           break; }
       }
     }
+    initcounter++;
   }
   digitalWrite(STATUSLED,STATUSLED_OFF); 
 }
 
-
 float read_battery_voltage(void) {
   float vmess;
   digitalWrite(VMESS_OUT, HIGH);
-  Sleepy::loseSomeTime(100);      // Wait 100ms 
+  LowPower.powerDown(SLEEP_250MS, ADC_ON, BOD_ON); ; // Wait some time to get the voltage stable
+//  delay(100);      // Wait 100ms 
   vmess=analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
@@ -133,11 +141,30 @@ float read_battery_voltage(void) {
   return vmess / VOLTAGEDIVIDER;
 }
 
+float read_solar(void) {
+  float vmess;
+  vmess=analogRead(VMESS_SOLAR);
+  vmess=vmess+analogRead(VMESS_SOLAR);
+  vmess=vmess+analogRead(VMESS_SOLAR);
+  vmess=vmess+analogRead(VMESS_SOLAR);
+  vmess=vmess+analogRead(VMESS_SOLAR);
+  return vmess / VOLTAGEDIVIDER;
+}
+
+float read_licht(void) {
+  float vmess;
+  vmess=analogRead(VMESS_LICHT);
+  vmess=vmess+analogRead(VMESS_LICHT);
+  vmess=vmess+analogRead(VMESS_LICHT);
+  vmess=vmess+analogRead(VMESS_LICHT);
+  vmess=vmess+analogRead(VMESS_LICHT);
+  return vmess / 5;
+}
+
 void loop(void) {
-  digitalWrite(STATUSLED,STATUSLED_ON);
   if (network.update()) {
     network_busy = true;
-    my_millis = millis(); 
+    stayawakeloopcount=stayawakedefault; 
   }
   if ( ! network_busy ) {
   //*****************
@@ -151,19 +178,19 @@ void loop(void) {
   }  
   if ( network.available() ) {
     network_busy = true;
-    my_millis = millis(); 
+    stayawakeloopcount=stayawakedefault; 
     network.read(rxheader,&payload,sizeof(payload));
     switch (rxheader.type) {
       case 1:
         txheader.type=1;
         //****
-        // insert here: payload.value=[result from sensor] 
+        payload.value=read_solar(); 
         network.write(txheader,&payload,sizeof(payload));
        break;
       case 2:
         txheader.type=2;
         //****
-        // insert here: payload.value=[result from sensor] 
+        payload.value=read_licht(); 
         network.write(txheader,&payload,sizeof(payload));
        break;
       case 3:
@@ -213,9 +240,9 @@ void loop(void) {
         //****
         // insert here: action = payload.value
         if ( payload.value > 0.5 ) {
-          digitalWrite(7,HIGH); 
+          digitalWrite(STATUSLED,STATUSLED_ON); 
         } else {
-          digitalWrite(7,LOW); 
+          digitalWrite(STATUSLED,STATUSLED_OFF); 
         }
         network.write(txheader,&payload,sizeof(payload));
        break;
@@ -228,7 +255,7 @@ void loop(void) {
       case 111:  
       // sleeptimer
         if (payload.value > 0) sleeptime=payload.value*10;
-        mode=sleep;
+        mode=sleep_node;
         txheader.type=111;
         network.write(txheader,&payload,sizeof(payload));
         break;       
@@ -246,21 +273,29 @@ void loop(void) {
         break;     
     }
   }
-  digitalWrite(STATUSLED,STATUSLED_OFF); 
-  network_busy = (millis() - my_millis) < stayawaketime; 
-  if ( ! network_busy ) {
+  network_busy = stayawakeloopcount > 0; 
+  if ( network_busy ) {
+    LowPower.powerDown(SLEEP_250MS, ADC_OFF, BOD_ON); ; // Wait some time to get messages on the radio
+    stayawakeloopcount--;
+  } else {
     switch ( mode ) {
-      case sleep:
+      case sleep_node:
         if ( ! radio_always_on ) radio.powerDown();
-        Sleepy::loseSomeTime(sleeptime);
+        for (unsigned int loopcount=sleeptime; loopcount > 0; loopcount--) {
+          if (loopcount > 8) {
+            LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_ON); ; // Just sleep
+            loopcount=loopcount-7;
+          } else {
+            LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_ON); ; // Just sleep
+          }
+        }  
         if ( ! radio_always_on ) radio.powerUp();
-        Sleepy::loseSomeTime(1000); // Wait some time to get messages on the radio
+        LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_ON); ; // Wait some time to get messages on the radio
         break;
       case listen_radio:
+         LowPower.powerDown(SLEEP_250MS, ADC_OFF, BOD_ON); ; // Wait some time to get messages on the radio
           // nothing do do here  
         break;
     }
-  } else {
-    Sleepy::loseSomeTime(100); // Wait some time befor starting the next loop
   }
 }
