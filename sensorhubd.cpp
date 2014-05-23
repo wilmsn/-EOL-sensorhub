@@ -379,22 +379,20 @@ int main(int argc, char** argv) {
 				case 112: {
 					txheader.type=112;
 					bool radio_always_on = (payload.value >0.5);
-					network.write(txheader,&payload,sizeof(payload));
 #ifdef DEBUG 
-					if ( radio_always_on ) sprintf(debug, "---Debug: Radio allways on for Node: %o finished.", sendernode);
-					else sprintf(debug, "---Debug: Radio allways off for Node: %o finished.", sendernode);
+					if ( radio_always_on ) sprintf(debug, "---Debug: Radio allways on for Node: %o.", sendernode);
+					else sprintf(debug, "---Debug: Radio allways off for Node: %o.", sendernode);
 					logmsg(debug);        
 #endif        
 					del_messageentry(payload.Job, payload.seq);  
 				break;  } 
 				
-				case 117: {
+				case 118: {
 #ifdef DEBUG 
-					sprintf(debug, DEBUGSTR "Wake up of Node: %o finished.", sendernode);
+					sprintf(debug, DEBUGSTR "Node: %o Init finished.", sendernode);
 					logmsg(debug);        
 #endif        
 					del_messageentry(payload.Job, payload.seq);  
-
 				break; }
 				
 				case 119: {
@@ -434,8 +432,8 @@ int main(int argc, char** argv) {
 						sprintf(sql_stmt,"insert into messagebuffer(job,seq,node,channel,value, priority) values (%d,2,'0%o',112,%f,1)"
 								,init_jobno, sendernode, radiomode);
 						do_sql(sql_stmt);
-						// Channel 119 sets init is finished
-						sprintf(sql_stmt,"insert into messagebuffer(job,seq,node,channel,value, priority) values (%d,3,'0%o',119,0,1)"
+						// Channel 118 sets init is finished
+						sprintf(sql_stmt,"insert into messagebuffer(job,seq,node,channel,value, priority) values (%d,3,'0%o',118,0,1)"
 								,init_jobno, sendernode);
 						do_sql(sql_stmt);
 						// Set the actors to its last known value

@@ -19,6 +19,8 @@
 #define VOLTAGEDIVIDER 848
 #define VMESS_LICHT A2
 #define VMESS_SOLAR A1
+// How many cycles do we stay awake on network activity
+#define STAYAWAKEDEFAULT 20
 
 
 // ------ End of configuration part ------------
@@ -38,23 +40,17 @@ struct payload_t
 
 payload_t payload;    
 
-enum mode_t { sleep_node, listen_radio } mode;
+enum radiomode_t { radio_sleep, radio_listen } radiomode;
 
 RF24NetworkHeader rxheader;
 RF24NetworkHeader txheader(0);
 
 unsigned int sleeptime = 0;
-unsigned int initcounter = 0;
-boolean got_msg_111 = false;
-boolean got_msg_112 = false;
-boolean got_msg_119 = false;
-boolean radio_always_on = false;
+int init_loop_counter = 0;
+boolean init_finished = false;
+boolean init_transmit = true;
 boolean network_busy = false;
-//unsigned long my_millis = 0;
-unsigned int stayawakedefault = 20; // 5 seconds
 unsigned int stayawakeloopcount = 0;
-
-//ISR(WDT_vect) { Sleepy::watchdogEvent(); } // Setup for low power waiting
 
 // Usage: radio(CE_pin, CS_pin)
 RF24 radio(RADIO_CE_PIN,RADIO_CSN_PIN);
@@ -83,55 +79,56 @@ void setup(void) {
   radio.setAutoAck(true);
   radio.setRetries(2,15);
   network.begin(RADIOCHANNEL, NODE);
-//  delay(200);
   radio.setDataRate(RF24_250KBPS);
   digitalWrite(STATUSLED,STATUSLED_ON); 
-  // initialisation beginns: set sleeptime
-  initcounter = 20;
-  while ( ! (got_msg_111 && got_msg_112 && got_msg_119) ) {
-    if ( initcounter > 10) {
+  // initialisation beginns
+  while ( ! init_finished ) {
+    if ( init_transmit && init_loop_counter < 1 ) {
       txheader.type=119;
       payload.orderno=0;
       payload.seq=0;
       payload.value=0;
       network.write(txheader,&payload,sizeof(payload));
-      initcounter=0;
+      init_loop_counter=10;
     }
-    LowPower.powerDown(SLEEP_30MS, ADC_ON, BOD_ON); ; // Wait some time to get the voltage stable
     network.update();
     if ( network.available() ) {
       network.read(rxheader,&payload,sizeof(payload));
+      init_transmit=false;
+      init_loop_counter=0;
+      txheader.type=rxheader.type;
       switch (rxheader.type) {
-        case 119: {
-          mode = sleep_node;
-          got_msg_119=true;
-          break; }
-        case 112: {
-          // radio on (=1) or off (=0) when sleep
-          radio_always_on = (payload.value > 0.5);
-          mode = sleep_node;
-          got_msg_112=true;
-          break; }
         case 111: {
         // Init des Sleeptimers
           sleeptime=payload.value;
-          txheader.type=111;
-          payload.value=sleeptime;
-          network.write(txheader,&payload,sizeof(payload));
-          got_msg_111=true;
           break; }
+        case 112: {
+          // radio on (=1) or off (=0) when sleep
+          if (payload.value > 0.5) radiomode = radio_sleep; else radiomode=radio_listen;
+          break; }
+        case 118: {
+          init_finished=true;
+          break; }
+        default: {
+            // nothing right now
+          } 
       }
+      //returns every message
+      network.write(txheader,&payload,sizeof(payload));
     }
-    initcounter++;
+    LowPower.powerDown(SLEEP_30MS, ADC_ON, BOD_ON); ; // Wait some time until the next turn
+    init_loop_counter--;
+    //just in case of initialisation is interrupted
+    if (init_loop_counter < -1000) init_transmit=true;
   }
   digitalWrite(STATUSLED,STATUSLED_OFF); 
+  network_busy=true;
 }
 
 float read_battery_voltage(void) {
   float vmess;
   digitalWrite(VMESS_OUT, HIGH);
   LowPower.powerDown(SLEEP_250MS, ADC_ON, BOD_ON); ; // Wait some time to get the voltage stable
-//  delay(100);      // Wait 100ms 
   vmess=analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
@@ -164,7 +161,7 @@ float read_licht(void) {
 void loop(void) {
   if (network.update()) {
     network_busy = true;
-    stayawakeloopcount=stayawakedefault; 
+    stayawakeloopcount=0;
   }
   if ( ! network_busy ) {
   //*****************
@@ -178,7 +175,7 @@ void loop(void) {
   }  
   if ( network.available() ) {
     network_busy = true;
-    stayawakeloopcount=stayawakedefault; 
+    stayawakeloopcount=0;
     network.read(rxheader,&payload,sizeof(payload));
     switch (rxheader.type) {
       case 1:
@@ -254,48 +251,42 @@ void loop(void) {
         break;      
       case 111:  
       // sleeptimer
-        if (payload.value > 0) sleeptime=payload.value*10;
-        mode=sleep_node;
+        if (payload.value > 0) sleeptime=payload.value;
+        radiomode=radio_sleep;
         txheader.type=111;
         network.write(txheader,&payload,sizeof(payload));
         break;       
       case 112:
       // radio on (=1) or off (=0) when sleep
         txheader.type=112;
-        radio_always_on = payload.value > 0.5;
+        if ( payload.value > 0.5) radiomode=radio_listen; else radiomode=radio_sleep;
         network.write(txheader,&payload,sizeof(payload));
         break;                
-      case 117: 
-      // listen radio - dont sleep
-        txheader.type=117;
-        mode=listen_radio;
+      case 118:
+      // just in case that there are still some messages inside the network ...
+        txheader.type=118;
         network.write(txheader,&payload,sizeof(payload));
-        break;     
+        break;                
     }
   }
-  network_busy = stayawakeloopcount > 0; 
+  if (stayawakeloopcount > STAYAWAKEDEFAULT) {
+    network_busy=false; 
+    stayawakeloopcount=0;
+  }
   if ( network_busy ) {
     LowPower.powerDown(SLEEP_250MS, ADC_OFF, BOD_ON); ; // Wait some time to get messages on the radio
-    stayawakeloopcount--;
+    stayawakeloopcount++;
   } else {
-    switch ( mode ) {
-      case sleep_node:
-        if ( ! radio_always_on ) radio.powerDown();
-        for (unsigned int loopcount=sleeptime; loopcount > 0; loopcount--) {
-          if (loopcount > 8) {
-            LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_ON); ; // Just sleep
-            loopcount=loopcount-7;
-          } else {
-            LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_ON); ; // Just sleep
-          }
-        }  
-        if ( ! radio_always_on ) radio.powerUp();
-        LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_ON); ; // Wait some time to get messages on the radio
-        break;
-      case listen_radio:
-         LowPower.powerDown(SLEEP_250MS, ADC_OFF, BOD_ON); ; // Wait some time to get messages on the radio
-          // nothing do do here  
-        break;
-    }
+    if ( radiomode == radio_sleep ) radio.powerDown();
+    for (unsigned int loopcount=sleeptime; loopcount > 0; loopcount--) {
+      if (loopcount > 7) {
+        LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_ON); ; // Just sleep
+        loopcount=loopcount-7;
+      } else {
+        LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_ON); ; // Just sleep
+      }
+    }  
+    if ( radiomode == radio_sleep ) radio.powerUp();
+    LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_ON); ; // Wait some time to get messages on the radio
   }
 }
