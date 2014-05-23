@@ -6,7 +6,7 @@ V3: Upgrade to Lowpower Library; display of a battery symbol
 // Define a valid radiochannel here
 #define RADIOCHANNEL 90
 // This node: Use octal numbers starting with "0": "041" is child 4 of node 1
-#define NODE 04 
+#define NODE 03 
 // The CE Pin of the Radio module
 #define RADIO_CE_PIN 10
 // The CS Pin of the Radio module
@@ -136,7 +136,7 @@ void setup(void) {
           break; }
         case 112: {
           // radio on (=1) or off (=0) when sleep
-          if (payload.value > 0.5) radiomode = radio_sleep; else radiomode=radio_listen;
+          if (payload.value > 0.5) radiomode = radio_listen; else radiomode=radio_sleep;
           break; }
         case 118: {
           init_finished=true;
@@ -155,6 +155,7 @@ void setup(void) {
   }
   digitalWrite(STATUSLED,STATUSLED_OFF); 
   network_busy=true;
+  draw_antenna(74,10);
 }
 
 void draw_temp(float t) {
@@ -335,6 +336,8 @@ void loop(void) {
       case 1: {
         // Temperature
         txheader.type=1;
+        sensors.requestTemperatures(); // Send the command to get temperatures
+        temp=sensors.getTempCByIndex(0);
         payload.value=temp;
         network.write(txheader,&payload,sizeof(payload));
        break; }
@@ -407,16 +410,22 @@ void loop(void) {
     LowPower.powerDown(SLEEP_250MS, ADC_OFF, BOD_ON); ; // Wait some time to get messages on the radio
     stayawakeloopcount++;
   } else {
-    if ( radiomode == radio_sleep ) radio.powerDown();
+    if ( radiomode == radio_sleep ) {
+      radio.powerDown();
+      wipe_antenna(74,10);
+    }
     for (unsigned int loopcount=sleeptime; loopcount > 0; loopcount--) {
-      if (loopcount > 8) {
+      if (loopcount > 7) {
         LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_ON); ; // Just sleep
         loopcount=loopcount-7;
       } else {
         LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_ON); ; // Just sleep
       }
     }  
-    if ( radiomode == radio_sleep ) radio.powerUp();
+    if ( radiomode == radio_sleep ) {
+      radio.powerUp();
+    }
+    draw_antenna(74,10);
     LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_ON); ; // Wait some time to get messages on the radio
   }
 }

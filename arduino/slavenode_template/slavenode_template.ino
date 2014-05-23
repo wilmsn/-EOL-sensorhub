@@ -100,7 +100,7 @@ void setup(void) {
           break; }
         case 112: {
           // radio on (=1) or off (=0) when sleep
-          if (payload.value > 0.5) radiomode = radio_sleep; else radiomode=radio_listen;
+          if (payload.value > 0.5) radiomode = radio_listen; else radiomode=radio_sleep;
           break; }
         case 118: {
           init_finished=true;

@@ -413,13 +413,14 @@ int main(int argc, char** argv) {
 					rc=sqlite3_finalize(stmt);
 					if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
 					if ( init_waiting_jobs == 0) { 
-						sprintf (sql_stmt, "select sleeptime, radiomode from node where node = '0%o' LIMIT 1 ",sendernode);
+						sprintf (sql_stmt, "select sleeptime from node where node = '0%o' LIMIT 1 ",sendernode);
 						rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
 						if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, sql_stmt);
 						double sleeptime=60000; // set defaults
 						double radiomode=0;
 						if (sqlite3_step(stmt) == SQLITE_ROW) {
 							sleeptime = sqlite3_column_double (stmt, 0);
+							// radiomode not implemented yet ==> still use default !!!!!
 							radiomode = sqlite3_column_double (stmt, 1);			
 						}
 						rc=sqlite3_finalize(stmt);
