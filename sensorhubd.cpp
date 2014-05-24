@@ -74,7 +74,6 @@ int ordersqlexeccount=0;
 bool ordersqlrefresh=true;
 
 sqlite3 *db;
-sqlite3_stmt *stmt;   
 
 RF24NetworkHeader rxheader;
 RF24NetworkHeader txheader;
@@ -218,12 +217,34 @@ void do_sql(char *mysql) {
 	if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, mysql);
 }
 
-void del_messageentry(uint16_t Job, uint16_t seq) {
-	char sql_stmt[300];            
-	sprintf(sql_stmt, " delete from messagebuffer where Job = %u and seq = %u "
+bool del_messageentry(uint16_t Job, uint16_t seq) {
+    sqlite3_stmt *mystmt;   
+	int rc;
+	char mysql_stmt[150];
+	char mydebug[100];
+    int recordcount = 0;	
+	sprintf(mysql_stmt, "select count(*) from messagebuffer where Job = %u and seq = %u"
 					, Job, seq );
-	do_sql(sql_stmt);
-	ordersqlrefresh=true;
+	rc = sqlite3_prepare(db, mysql_stmt, -1, &mystmt, 0 ); 
+	if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, mysql_stmt);
+	if (sqlite3_step(mystmt) == SQLITE_ROW) {
+		recordcount = sqlite3_column_int(mystmt, 0);
+	}
+	rc=sqlite3_finalize(mystmt);
+	if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, mysql_stmt);
+#ifdef DEBUG 
+	sprintf(mydebug, "Info: del_messageentry found %d records", recordcount);
+    logmsg(mydebug);               
+#endif  
+	if (recordcount == 1) {
+		sprintf(mysql_stmt, " delete from messagebuffer where Job = %u and seq = %u "
+						, Job, seq );
+		do_sql(mysql_stmt);
+		ordersqlrefresh=true;
+		return true;
+	} else {
+		return false;
+	}
 }
 
 void check_trigger(float last_val, float akt_val, int sensor) {
@@ -235,6 +256,7 @@ void check_trigger(float last_val, float akt_val, int sensor) {
 }
 
 void store_sensor_value(uint16_t job, uint16_t seq, float val) {
+    sqlite3_stmt *stmt;   
 	char sql_stmt[300];
 	float last_val;
 	int sensor;
@@ -292,6 +314,7 @@ int getparentnodeadr(int nodeadr) {
 
 
 int main(int argc, char** argv) {
+    sqlite3_stmt *stmt;   
 	char debug[300];
 	int init_jobno = 1;
 	order_t order[7]; // we do not handle more than 6 orders (one per subnode 1...6) at one time
@@ -338,34 +361,37 @@ int main(int argc, char** argv) {
 
 				case 1 ... 20: {
 				// Sensor 
+					if (del_messageentry(payload.Job, payload.seq)) {
+						store_sensor_value(payload.Job, payload.seq, payload.value); 
 #ifdef DEBUG 
-					sprintf(debug, DEBUGSTR "Value of sensor %u on Node: %o is %f ", rxheader.type, sendernode, payload.value);
-					logmsg(debug);        
+						sprintf(debug, DEBUGSTR "Value of sensor %u on Node: %o is %f ", rxheader.type, sendernode, payload.value);
+						logmsg(debug);        
 #endif        
-					del_messageentry(payload.Job, payload.seq);  
-					store_sensor_value(payload.Job, payload.seq, payload.value); 
+					}
 				break; }
-
+ 
 				case 21 ... 99: {
 				// Actor 
+					if (del_messageentry(payload.Job, payload.seq)) {
+						store_actor_value(payload.Job, payload.seq, payload.value); 
 #ifdef DEBUG 
-					sprintf(debug, DEBUGSTR "Value of sensor %u on Node: %o is %f ", rxheader.type, sendernode, payload.value);
-					logmsg(debug);        
+						sprintf(debug, DEBUGSTR "Value of sensor %u on Node: %o is %f ", rxheader.type, sendernode, payload.value);
+						logmsg(debug);        
 #endif        
-					del_messageentry(payload.Job, payload.seq);  
-					store_actor_value(payload.Job, payload.seq, payload.value); 
+					}
 				break; }
 
 				case 101: {
 				// battery volatage
+					if (del_messageentry(payload.Job, payload.seq)) {
+						store_sensor_value(payload.Job, payload.seq, payload.value); 
 #ifdef DEBUG 
-					sprintf(debug, DEBUGSTR "Voltage of Node: %o is %f ", sendernode, payload.value);
-					logmsg(debug);        
+						sprintf(debug, DEBUGSTR "Voltage of Node: %o is %f ", sendernode, payload.value);
+						logmsg(debug);        
 #endif        
-					del_messageentry(payload.Job, payload.seq);  
-					store_sensor_value(payload.Job, payload.seq, payload.value); 
-					sprintf(sql_stmt,"update node set Battery_act = %f where node = '0%o'", payload.value, sendernode);
-					do_sql(sql_stmt);
+						sprintf(sql_stmt,"update node set Battery_act = %f where node = '0%o'", payload.value, sendernode);
+						do_sql(sql_stmt);
+					}
 				break; }
 				
 				case 111: {
@@ -542,7 +568,6 @@ int main(int argc, char** argv) {
 						order[i].to_node  = getnodeadr(nodebuf);
 						order[i].channel  = sqlite3_column_int (stmt, 3);
 						order[i].value = sqlite3_column_double (stmt, 4);
-						if ( order[i].channel == 111 || order[i].channel == 112 || order[i].channel == 119 ) del_messageentry(order[i].Job, order[i].seq);
 					}
 					rc=sqlite3_finalize(stmt);
 					if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
@@ -569,7 +594,7 @@ int main(int argc, char** argv) {
 						sprintf(debug, DEBUGSTR "Failed: Send: Channel: %u from Node: %o to Node: %o Job %d Seq %d Value %f "
 								, txheader.type, txheader.from_node, txheader.to_node, payload.Job, payload.seq, payload.value);
 						logmsg(debug); 
-#endif      
+#endif    
 					}  
 				}
 				i++; 
