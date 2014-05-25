@@ -36,7 +36,7 @@ V3: Upgrade to Lowpower Library; display of a battery symbol
 #include <RF24Network.h>
 #include <RF24.h>
 #include <SPI.h>
-#include <LowPower.h>  // Include library containing low power functions
+#include <sleeplib.h>
 //****
 // some includes for your sensor(s) here
 //****
@@ -148,7 +148,7 @@ void setup(void) {
       //returns every message
       network.write(txheader,&payload,sizeof(payload));
     }
-    LowPower.powerDown(SLEEP_30MS, ADC_ON, BOD_ON); ; // Wait some time until the next turn
+    sleep4ms(30);
     init_loop_counter--;
     //just in case of initialisation is interrupted
     if (init_loop_counter < -1000) init_transmit=true;
@@ -190,7 +190,7 @@ void draw_temp(float t) {
 float read_battery_voltage(void) {
   float vmess;
   digitalWrite(VMESS_OUT, HIGH);
-  LowPower.powerDown(SLEEP_250MS, ADC_ON, BOD_ON); ; // Wait some time to get the voltage stable
+  sleep4ms(250);
   vmess=analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
@@ -407,25 +407,18 @@ void loop(void) {
     stayawakeloopcount=0;
   }
   if ( network_busy ) {
-    LowPower.powerDown(SLEEP_250MS, ADC_OFF, BOD_ON); ; // Wait some time to get messages on the radio
+    sleep4ms(100);
     stayawakeloopcount++;
   } else {
     if ( radiomode == radio_sleep ) {
       radio.powerDown();
       wipe_antenna(74,10);
     }
-    for (unsigned int loopcount=sleeptime; loopcount > 0; loopcount--) {
-      if (loopcount > 7) {
-        LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_ON); ; // Just sleep
-        loopcount=loopcount-7;
-      } else {
-        LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_ON); ; // Just sleep
-      }
-    }  
+    sleep4ms(sleeptime * 1000);
     if ( radiomode == radio_sleep ) {
       radio.powerUp();
     }
     draw_antenna(74,10);
-    LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_ON); ; // Wait some time to get messages on the radio
+    sleep4ms(500);
   }
 }
