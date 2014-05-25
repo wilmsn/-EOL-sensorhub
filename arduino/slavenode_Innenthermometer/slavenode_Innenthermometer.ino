@@ -44,6 +44,8 @@ V3: Upgrade to Lowpower Library; display of a battery symbol
 #include <DallasTemperature.h>
 #include <LCD5110_Graph.h>
 
+ISR(WDT_vect) { watchdogEvent(); }
+
 // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
 OneWire oneWire(ONE_WIRE_BUS);
  
@@ -89,6 +91,83 @@ RF24 radio(RADIO_CE_PIN,RADIO_CSN_PIN);
 // Network uses that radio
 RF24Network network(radio);
 
+void action_loop(void) {
+    switch (rxheader.type) {
+      case 1: {
+        // Temperature
+        txheader.type=1;
+        sensors.requestTemperatures(); // Send the command to get temperatures
+        temp=sensors.getTempCByIndex(0);
+        payload.value=temp;
+        network.write(txheader,&payload,sizeof(payload));
+       break; }
+      case 21:
+        // Set field 1
+        txheader.type=21;
+        print_field(payload.value,1);
+        network.write(txheader,&payload,sizeof(payload));
+       break;
+      case 22:
+        // Set field 2
+        txheader.type=22;
+        print_field(payload.value,2);
+        network.write(txheader,&payload,sizeof(payload));
+       break;
+      case 23:
+        // Set field 3
+        txheader.type=23;
+        print_field(payload.value,3);
+        network.write(txheader,&payload,sizeof(payload));
+       break;
+      case 24:
+        // Set field 4
+        txheader.type=24;
+        print_field(payload.value,4);
+        network.write(txheader,&payload,sizeof(payload));
+       break;
+      case 31:
+        // Displaylight ON <-> OFF
+        txheader.type=31;
+        if (payload.value > 0.5) {
+          digitalWrite(STATUSLED,STATUSLED_ON); 
+        } else {
+          digitalWrite(STATUSLED,STATUSLED_OFF); 
+        }
+        network.write(txheader,&payload,sizeof(payload));
+       break;
+      case 101:  
+      // battery voltage
+        payload.value=read_battery_voltage();
+        draw_battery(74,1,payload.value);
+        txheader.type=101;
+        network.write(txheader,&payload,sizeof(payload));  
+        break;      
+      case 111:  
+      // sleeptimer
+        if (payload.value > 0) sleeptime=payload.value;
+        radiomode=radio_sleep;
+        txheader.type=111;
+        network.write(txheader,&payload,sizeof(payload));
+        break;       
+      case 112:
+      // radio on (=1) or off (=0) when sleep
+        txheader.type=112;
+        if ( payload.value > 0.5) radiomode=radio_listen; else radiomode=radio_sleep;
+        network.write(txheader,&payload,sizeof(payload));
+        break;                
+      case 118:
+      // just in case that there are still some messages inside the network ...
+        init_finished=true;
+        txheader.type=118;
+        network.write(txheader,&payload,sizeof(payload));
+        break;                
+      default:
+      // Default: just send the paket back  
+        txheader=rxheader;
+        network.write(txheader,&payload,sizeof(payload));
+    }  
+}  
+
 void setup(void) {
   pinMode(STATUSLED, OUTPUT);     
   pinMode(VMESS_OUT, OUTPUT);  
@@ -128,25 +207,7 @@ void setup(void) {
       network.read(rxheader,&payload,sizeof(payload));
       init_transmit=false;
       init_loop_counter=0;
-      txheader.type=rxheader.type;
-      switch (rxheader.type) {
-        case 111: {
-        // Init des Sleeptimers
-          sleeptime=payload.value;
-          break; }
-        case 112: {
-          // radio on (=1) or off (=0) when sleep
-          if (payload.value > 0.5) radiomode = radio_listen; else radiomode=radio_sleep;
-          break; }
-        case 118: {
-          init_finished=true;
-          break; }
-        default: {
-            // nothing right now
-          } 
-      }
-      //returns every message
-      network.write(txheader,&payload,sizeof(payload));
+      action_loop(); 
     }
     sleep4ms(30);
     init_loop_counter--;
@@ -332,75 +393,7 @@ void loop(void) {
     network_busy = true;
     stayawakeloopcount=0;
     network.read(rxheader,&payload,sizeof(payload));
-    switch (rxheader.type) {
-      case 1: {
-        // Temperature
-        txheader.type=1;
-        sensors.requestTemperatures(); // Send the command to get temperatures
-        temp=sensors.getTempCByIndex(0);
-        payload.value=temp;
-        network.write(txheader,&payload,sizeof(payload));
-       break; }
-      case 21:
-        // Set field 1
-        txheader.type=21;
-        print_field(payload.value,1);
-        network.write(txheader,&payload,sizeof(payload));
-       break;
-      case 22:
-        // Set field 2
-        txheader.type=22;
-        print_field(payload.value,2);
-        network.write(txheader,&payload,sizeof(payload));
-       break;
-      case 23:
-        // Set field 3
-        txheader.type=23;
-        print_field(payload.value,3);
-        network.write(txheader,&payload,sizeof(payload));
-       break;
-      case 24:
-        // Set field 4
-        txheader.type=24;
-        print_field(payload.value,4);
-        network.write(txheader,&payload,sizeof(payload));
-       break;
-      case 31:
-        // Displaylight ON <-> OFF
-        txheader.type=31;
-        if (payload.value > 0.5) {
-          digitalWrite(STATUSLED,STATUSLED_ON); 
-        } else {
-          digitalWrite(STATUSLED,STATUSLED_OFF); 
-        }
-        network.write(txheader,&payload,sizeof(payload));
-       break;
-      case 101:  
-      // battery voltage
-        payload.value=read_battery_voltage();
-        draw_battery(74,1,payload.value);
-        txheader.type=101;
-        network.write(txheader,&payload,sizeof(payload));  
-        break;      
-      case 111:  
-      // sleeptimer
-        if (payload.value > 0) sleeptime=payload.value;
-        radiomode=radio_sleep;
-        txheader.type=111;
-        network.write(txheader,&payload,sizeof(payload));
-        break;       
-      case 112:
-      // radio on (=1) or off (=0) when sleep
-        txheader.type=112;
-        if ( payload.value > 0.5) radiomode=radio_listen; else radiomode=radio_sleep;
-        network.write(txheader,&payload,sizeof(payload));
-        break;                
-      case 118:
-      // just in case that there are still some messages inside the network ...
-        txheader.type=118;
-        network.write(txheader,&payload,sizeof(payload));
-        break;                
-    }
+    action_loop();
   }
   if ( stayawakeloopcount > STAYAWAKEDEFAULT ) {
     network_busy=false; 
