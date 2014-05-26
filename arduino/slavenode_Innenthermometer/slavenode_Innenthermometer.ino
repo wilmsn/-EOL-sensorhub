@@ -6,7 +6,7 @@ V3: Upgrade to Lowpower Library; display of a battery symbol
 // Define a valid radiochannel here
 #define RADIOCHANNEL 90
 // This node: Use octal numbers starting with "0": "041" is child 4 of node 1
-#define NODE 03 
+#define NODE 04 
 // The CE Pin of the Radio module
 #define RADIO_CE_PIN 10
 // The CS Pin of the Radio module
@@ -30,6 +30,18 @@ V3: Upgrade to Lowpower Library; display of a battery symbol
 #define U4 3.9
 // How many cycles do we stay awake on network activity
 #define STAYAWAKEDEFAULT 20
+// set X0 and Y0 of battery symbol ( is 10 * 5 pixel )
+#define BATT_X0 74
+#define BATT_Y0 0
+// set X0 and Y0 of antenna symbol ( is 10 * 10 pixel )
+#define ANT_X0 74
+#define ANT_Y0 6
+// set X0 and Y0 of thermometer symbol ( is 3 * 6 pixel )
+#define THERM_X0 74
+#define THERM_Y0 17
+// set X0 and Y0 of waiting symbol ( is 6 * 6 pixel )
+#define WAIT_X0 78
+#define WAIT_Y0 17
 
 // ------ End of configuration part ------------
 
@@ -78,6 +90,7 @@ RF24NetworkHeader txheader(0);
 
 unsigned int sleeptime = 0;
 int init_loop_counter = 0;
+int free_loop_counter = 0;
 boolean init_finished = false;
 boolean init_transmit = true;
 boolean network_busy = false;
@@ -96,10 +109,9 @@ void action_loop(void) {
       case 1: {
         // Temperature
         txheader.type=1;
-        sensors.requestTemperatures(); // Send the command to get temperatures
-        temp=sensors.getTempCByIndex(0);
-        payload.value=temp;
+        payload.value=get_temp();
         network.write(txheader,&payload,sizeof(payload));
+        free_loop_counter = 0;
        break; }
       case 21:
         // Set field 1
@@ -138,7 +150,7 @@ void action_loop(void) {
       case 101:  
       // battery voltage
         payload.value=read_battery_voltage();
-        draw_battery(74,1,payload.value);
+        draw_battery(BATT_X0,BATT_Y0,payload.value);
         txheader.type=101;
         network.write(txheader,&payload,sizeof(payload));  
         break;      
@@ -183,10 +195,8 @@ void setup(void) {
   myGLCD.setContrast(65);
   myGLCD.clrScr();
   sensors.begin(); 
-  sensors.requestTemperatures(); 
-  float temp=sensors.getTempCByIndex(0);
-  draw_temp(temp);
-  draw_battery(74,1,read_battery_voltage());
+  get_temp();
+  draw_battery(BATT_X0, BATT_Y0,read_battery_voltage());
   //####
   // end aditional init
   //####
@@ -216,7 +226,20 @@ void setup(void) {
   }
   digitalWrite(STATUSLED,STATUSLED_OFF); 
   network_busy=true;
-  draw_antenna(74,10);
+  draw_antenna(ANT_X0, ANT_Y0);
+}
+
+void draw_therm(byte x, byte y) {
+  myGLCD.drawRect(x+1,y,x+1,y+3);
+  myGLCD.drawRect(x,y+4,x+2,y+5);
+}
+
+void wipe_therm(byte x, byte y) {
+  for (byte i=x; i<x+3; i++) {
+    for (byte j=y; j<y+6; j++) {
+      myGLCD.clrPixel(i,j);
+    }
+  }
 }
 
 void draw_temp(float t) {
@@ -261,20 +284,30 @@ float read_battery_voltage(void) {
   return vmess / VOLTAGEDIVIDER;
 }
 
+float get_temp(void) {
+  float temp;
+  draw_therm(THERM_X0, THERM_Y0);
+  sensors.requestTemperatures(); // Send the command to get temperatures
+  temp=sensors.getTempCByIndex(0);
+  draw_temp(temp);
+  wipe_therm(THERM_X0, THERM_Y0);
+  return temp;
+}
+
 void print_field(float val, int field) {
   int x0, y0;
   switch (field) {
     case 1: x0=0; y0=25; break;
-    case 2: x0=41; y0=25; break;
+    case 2: x0=42; y0=25; break;
     case 3: x0=0; y0=36; break;
-    case 4: x0=41; y0=36; break;
+    case 4: x0=42; y0=36; break;
   }
-  for (int i=x0; i < x0+43; i++) {
+  for (int i=x0; i < x0+42; i++) {
     for (int j=y0; j< y0+12; j++) {
       myGLCD.clrPixel(i,j);
     }
   }
-  myGLCD.drawRect(x0,y0,x0+42,y0+11);
+  myGLCD.drawRect(x0,y0,x0+41,y0+11);
   myGLCD.setFont(SmallFont);
   if ( val > 100 ) {
     if (val+0.5 > 1000) { 
@@ -302,23 +335,17 @@ void draw_battery_filled(int x, int y) {
 }
 
 void draw_battery(int x, int y, float u) {
-  // Drawing a symbol of an battery
-  // Size: 10x4 pixel
-  // at position x and y
-  for (byte i=x+2; i <= x+9; i++) {
-    myGLCD.setPixel(i,y); 
-    myGLCD.setPixel(i,y+4); 
+  // Clear the drawing field
+  for (byte i=x; i<=x+9; i++) {
+    for (byte j=y; j<=y+5; j++) {
+      myGLCD.clrPixel(i,j);
+    }
   }
-  myGLCD.setPixel(x,y+1); 
-  myGLCD.setPixel(x,y+2); 
-  myGLCD.setPixel(x,y+3); 
-  myGLCD.setPixel(x+1,y+1); 
-  myGLCD.setPixel(x+1,y+2); 
-  myGLCD.setPixel(x+1,y+3); 
-  myGLCD.setPixel(x+9,y+1); 
-  myGLCD.setPixel(x+9,y+2); 
-  myGLCD.setPixel(x+9,y+3); 
-  myGLCD.clrRect(x+2,y+1,x+8,y+3);
+  // Drawing a symbol of an battery
+  // Size: 10x5 pixel
+  // at position x and y
+  myGLCD.drawRect(x+2,y,x+9,y+4);
+  myGLCD.drawRect(x,y+1,x+1,y+3);
   if ( u > U1 ) draw_battery_filled(x+8,y+1); else myGLCD.drawLine(x+3,y,x+7,y+4);
   if ( u > U2 ) draw_battery_filled(x+6,y+1);
   if ( u > U3 ) draw_battery_filled(x+4,y+1);
@@ -379,15 +406,38 @@ void wipe_antenna(int x, int y) {
    myGLCD.update();
 }  
   
+void draw_wait(byte x, byte y, int waitcount ) {
+  for (byte i=x; i<x+6; i++) {
+    for(byte j=y; j<y+6; j++) {
+      myGLCD.clrPixel(i,j);
+    }
+  }
+  if (waitcount > 1) myGLCD.setPixel(x+3,y+2);
+  if (waitcount > 2) myGLCD.setPixel(x+3,y+3);
+  if (waitcount > 3) myGLCD.setPixel(x+2,y+3);
+  if (waitcount > 4) myGLCD.setPixel(x+2,y+2);
+  if (waitcount > 5) myGLCD.setPixel(x+3,y  );
+  if (waitcount > 6) myGLCD.setPixel(x+4,y+1);
+  if (waitcount > 7) myGLCD.setPixel(x+5,y+2);
+  if (waitcount > 8) myGLCD.setPixel(x+5,y+3);
+  if (waitcount > 9) myGLCD.setPixel(x+4,y+4);
+  if (waitcount > 10) myGLCD.setPixel(x+3,y+5);
+  if (waitcount > 11) myGLCD.setPixel(x+2,y+5);
+  if (waitcount > 12) myGLCD.setPixel(x+1,y+4);
+  if (waitcount > 13) myGLCD.setPixel(x  ,y+3);
+  if (waitcount > 14) myGLCD.setPixel(x  ,y+2);
+  if (waitcount > 15) myGLCD.setPixel(x+1,y+1);
+  if (waitcount > 16) myGLCD.setPixel(x+2,y  );
+}
+
 void loop(void) {
   if (network.update()) {
     network_busy = true;
     stayawakeloopcount=0;
   } 
   if ( ! network_busy ) {
-    sensors.requestTemperatures(); // Send the command to get temperatures
-    temp=sensors.getTempCByIndex(0);
-    draw_temp(temp);
+    // save energy get the temperature every 10. loop (with sleeptime 1min => every 10min)
+    if (free_loop_counter == 11) get_temp();
   }
   if ( network.available() ) {
     network_busy = true;
@@ -403,15 +453,17 @@ void loop(void) {
     sleep4ms(100);
     stayawakeloopcount++;
   } else {
+    draw_wait(WAIT_X0, WAIT_Y0, free_loop_counter);
     if ( radiomode == radio_sleep ) {
       radio.powerDown();
-      wipe_antenna(74,10);
+      wipe_antenna(ANT_X0, ANT_Y0);
     }
     sleep4ms(sleeptime * 1000);
     if ( radiomode == radio_sleep ) {
       radio.powerUp();
     }
-    draw_antenna(74,10);
-    sleep4ms(500);
+    draw_antenna(ANT_X0, ANT_Y0);
+    sleep4ms(1000);
+    free_loop_counter++;
   }
 }
