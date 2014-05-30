@@ -26,16 +26,20 @@ function list_actor() {
   global $db;
   global $tabledetails;
   echo "<center><table $tabledetails>";
-  echo "<tr><th>Aktor#</th><th>Actorinfo</th><th>Node</th><th>Channel</th><th>Quelle</th><th>Inhalt</th><th>&nbsp;</th></tr>";
-  $results = $db->query("SELECT Actor, Actorinfo, Node, Channel, Source, Value from Actor");
+  echo "<tr><th>Actor</th><th>Node</th><th>Channel</th><th>Quelle</th><th>Inhalt</th><th>&nbsp;</th></tr>";
+  $results = $db->query("SELECT Actor, Actorinfo, Node, Channel, Source, Value ".
+                       " ,julianday(date('now')) - ifnull((select julianday(date(max(last_ts))) from sensor where node = a.node),1) ".
+                        "from Actor a ".
+						"order by substr(Node,length(node),1), substr(Node,length(node)-1,1), substr(Node,length(node)-2,1), channel  ");
   while ($row = $results->fetchArray()) {
-    echo "<tr class=block2><td>",$row[0],"</td><td>",$row[1],"</td><td>",$row[2],"</td><td>",$row[3],"</td>";
+    if ($row[6] > 1) { $td_col = "bgcolor=#999999"; } else { $td_col = ""; }
+    echo "<tr class=block2><td $td_col>",$row[1],"</td><td $td_col align=right>",$row[2],"</td><td $td_col>",$row[3],"</td>";
 	switch ($row[4]) {
 	  case "s":
-	    echo "<td>Sensor</td><td>",$row[5],"</td><td>";
+	    echo "<td $td_col>Sensor</td><td $td_col>",$row[5],"</td><td $td_col>";
 		break;
 	  case "v":
-	    echo "<td>fester Wert</td><td>",$row[5],"</td><td>";
+	    echo "<td $td_col>fester Wert</td><td $td_col>",$row[5],"</td><td $td_col>";
 		break;
 	}
     echo "<button class=myButton value=$row[0] onclick=getresult(this.value,'actor','edit_actor');>Editieren</button>",
@@ -53,30 +57,33 @@ function edit_actor($myactor) {
   global $tabledetails_edit;
   echo "<center><table $tabledetails_edit><tr><th colspan=2>";
   if ($myactor==0) {
+    $results = $db->query("SELECT ifnull(max(Actor),0)+1 from Actor");
+    $row = $results->fetchArray();
+	$myactor=$row[0];
     $myactorinfo="";
     $mynode="";
     $mychannel="";
-    echo "Anlegen eines neuen Aktors</th></tr>",
-         "<tr class=block2><td>Aktornummer:</td><td>",
-         "<input id=actor class=input value=''></td></tr>",
-         "<tr class=block2><td>Aktorname:</td><td>";
+	$actor_is_new=1;
+    echo "Anlegen eines neuen Aktors ($myactor)";
   } else {
     $results = $db->query("SELECT Actor, Actorinfo, Node, Channel, Source, Value from Actor where Actor = $myactor ");
     $row = $results->fetchArray();
     $myactorinfo=$row[1];
     $mynode=$row[2];
     $mychannel=$row[3];
-    echo "Editieren von Aktor $myactor</th></tr>",
-         "<tr class=block2><td>Aktorname:</td><td>",
-         "<input type=hidden id=actor value=$row[0]>";
+	$actor_is_new=0;
+    echo "Editieren eines Aktors ($myactor)";
   }
-  echo "<input class=input id=actorinfo value='",$myactorinfo,"'>","</td></tr>",
+  echo 	"</th></tr>",
+        "<tr class=block2><td>Aktorname:</td><td>",
+        "<input type=hidden id=actor value=$row[0]>",
+		"<input class=input id=actorinfo value='",$myactorinfo,"'>","</td></tr>",
        "<tr><td>Node:</td><td>";
   input_select_node($mynode);
   echo "</td></tr>",
        "<tr><td>Channel:</td><td><input class=input id=channel value='",$mychannel,"'>","</td></tr>",
 	   "<tr><td>Quelle:</td><td><select size=1 id='source' class=input onchange='actorsourceinput()'>";
-  if ($myactor==0) {   
+  if ($actor_is_new==1) {   
 	echo "<option value='-' selected>---</option><option value='s'>Sensor</option><option value='v'>fester Wert</option></select></td></tr>",
 	     "<tr id='actor_val_source'><td></td><td></td></tr>";
   } else {
@@ -94,7 +101,7 @@ function edit_actor($myactor) {
 	}
   }
   echo "<tr><td colspan=2><center>&nbsp;";  
-  if ($myactor==0) {
+  if ($actor_is_new==1) {
     echo "<button class=myButton onclick=savenewactor();>Aktor anlegen</button>";
   } else {
     echo "<button class=myButton onclick=updateactor();>Werte eintragen</button>";

@@ -31,7 +31,7 @@ function mymessage($msgtyp,$msgtext) {
 switch ($display) {
   case "":
     echo "<script src='http://ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js'></script>";
-    echo "<script src='admin/sensorhub.js'></script>";
+    echo "<script src='sensorhub.js'></script>";
     include('sensorhubmenu.html');
   break;
   case "sensor":

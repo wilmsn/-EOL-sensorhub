@@ -7,7 +7,6 @@
 function list_job() {
   global $db;
   global $tabledetails;
-//  $myseq=$_GET["seq"];
   if (isset($_GET["seq"]))    {$myseq=$_GET["seq"];} else { $myseq=0; }
   echo "<center><table $tabledetails>";
   echo "<tr class=block1><th>Jobkette</th><th>LfdNr</th><th>Sensor/Aktor</th><th>&nbsp;</th></tr>";
@@ -18,7 +17,6 @@ function list_job() {
     $row1 = $results1->fetchArray();
     echo "<tr class=block2><td rowspan=$row1[0]>$row[1]</td>";
     $results1 = $db->query("SELECT  seq, Info from Job a, sensors_and_actors b where job = $myjob and a.type = b.type and a.id = b.id ");
-//       $results1 = $db->query("SELECT  0, 1 from Job");
     $i=0;
     while ($row1 = $results1->fetchArray()) {
       $myseq=$row1[0];
@@ -192,6 +190,7 @@ function start_job_once() {
   global $db;
   $mydsid=$_GET["dsid"];
   $sql="insert into schedule(schedule,job,Start,Interval,type,trigger) values ( (select max(ifnull(schedule,0)+1) from schedule), $mydsid , '-1', '-1', 't', 0)";
+  echo "SQL: $sql <br>";
   if ( $db->exec($sql) ) {
     mymessage("info","Job gestartet");
   } else {

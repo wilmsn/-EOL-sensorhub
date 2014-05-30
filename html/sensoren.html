@@ -1,0 +1,100 @@
+<?php
+$DB_FILENAME="/var/database/sensorhub.db";
+$url="/admin/sensoren.html";
+$db = new SQLite3($DB_FILENAME);
+if (isset($_GET["sensor"]))  {
+  $sensor=$_GET["sensor"];
+} else { 
+  $sensor=""; 
+}
+if (isset($_GET["page"]))  {
+  $page=$_GET["page"];
+} else { 
+  $page=1; 
+}
+?>
+
+<head>
+  <title>Sensorhub &Uuml;bersicht Sensoren</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" >
+</head>
+<body bgcolor="#cccccc">
+<style type="text/css">
+<!--
+
+#seitenbereich {
+  background-color:#cccccc;
+}
+ -->
+</style>
+
+<div id="seitenbereich">
+<center>
+<H1>Sensorhub: &Uuml;bersicht der aktiven Sensoren</h1>
+
+<?php
+if ($sensor=="") {
+    echo "<table border=1><tr><th>Node ID</th><th>Bezeichnung/<br>Aufstellungsort</th><th>U-Batt.</th></tr>";
+    $results_node = $db->query(" select node, nodename, location, Battery_act from node".
+                               " where node in ( select node from sensor where date(last_ts) > date('now','-1 day' )) ".
+							   " order by substr(Node,length(node),1), substr(Node,length(node)-1,1), substr(Node,length(node)-2,1) ");
+    while ($row_node = $results_node->fetchArray() ) {
+        echo "<tr><td>$row_node[0]</td><td>$row_node[1]<br>$row_node[2]</td><td>$row_node[3]</td></tr>",
+	         "<tr><td>&nbsp;</td><td colspan=2><table border=1><tr><th&nbsp;</th><th>Sensor</th><th>Sensorbeschreibung</th><th>Channel</th><th>Letzter Wert</th><th>&nbsp;</th></tr>";
+	    $results_sensor = $db->query("select Sensor, Sensorinfo, Channel, Last_Value from sensor where node = '$row_node[0]' order by channel asc ");   
+        while ($row_sensor = $results_sensor->fetchArray() ) {
+            echo "<tr><td>$row_sensor[0]</td><td>$row_sensor[1]</td><td>$row_sensor[2]</td><td>$row_sensor[3]</td>",
+	             "<td><a href=".$url."?sensor=$row_sensor[0]>Verlauf</a></td></tr>";   
+	    }
+	    echo "</table></td></tr>";	   
+    }
+} else {
+    $limit1=($page-1)*10;
+	$limit2=10;
+    $results_sensor = $db->query("select Sensorinfo, Channel, Node from sensor where sensor = $sensor ");  
+    $row_sensor = $results_sensor->fetchArray();	
+    $results_node = $db->query(" select node, nodename, location from node where node = '".$row_sensor[2]."' ");
+    $row_node = $results_node->fetchArray();
+	echo "<h2>Node: $row_node[1] ($row_node[0]) $row_node[2]<br>";
+	echo "Sensor: $row_sensor[0] ($row_sensor[1]) </h2><a href=".$url.">alle Sensoren anzeigen</a><table><tr><td>";
+	$prevpage=$page-1;
+	if ($page > 1) {
+	    echo "<a href=".$url."?sensor=$sensor&page=".$prevpage.">&lt;</a>";
+	} else {
+        echo "&nbsp;";
+    }		
+    echo "</td><td><table border=1><tr><th>Zeitpunkt</th><th>Wert</th></tr>";
+	$results = $db->query("select count(*) from sensordata where sensor = $sensor");
+    $row = $results->fetchArray();
+	$ds_count=$row[0];
+	$results = $db->query("select datetime(utime, 'unixepoch'), value from sensordata ".
+	                      " where sensor = $sensor order by utime desc LIMIT $limit1, $limit2");
+    while ($row = $results->fetchArray() ) {
+  	    echo "<tr><td>$row[0]</td><td>$row[1]</td></tr>";
+	}
+	$nextpage=$page+1;
+	echo "</table></td><td>";
+  	if ($page < $ds_count/10) {
+	    echo "<a href=".$url."?sensor=$sensor&page=".$nextpage.">&gt;</a> ";
+	} else {
+        echo "&nbsp;";
+    }				
+	echo "</td></tr></table>Seite: ";
+	$aktpage=1;
+	for ($actpage=1; $actpage <= $ds_count/10; $actpage++) {
+        if ( $actpage > ($page -11) && $actpage < ($page +11) ) {
+           if ( $actpage == ($page -10) || $actpage == ($page +10) ) echo "<br>";
+		   if ( $actpage <> $page ) {
+		       echo "<a href=".$url."?sensor=$sensor&page=$actpage>$actpage</a> ";
+			} else {
+			   echo "&nbsp;&nbsp;&nbsp;&nbsp;";
+			}
+		} else {
+		    if ( (int)($actpage/10) == $actpage/10 ) echo "<a href=".$url."?sensor=$sensor&page=$actpage>$actpage</a> ";	
+		}
+    }	
+
+}
+?>
+</table>
+</body>

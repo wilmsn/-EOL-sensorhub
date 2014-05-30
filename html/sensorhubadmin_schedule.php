@@ -12,12 +12,11 @@ function list_schedule() {
        "<th>Startzeitpunkt</th>",
        "<th>Intervall<br>in Minuten</th><th>&nbsp;</th></tr>",
        "<tr><th>&nbsp;</th><th>&nbsp;</th><th colspan=2>oder Trigger</th><th>&nbsp;</th></tr>";
-  $sql="select schedule, jobdesc, Start, Interval, type, c.triggername ".
+  $results = $db->query("select schedule, jobdesc, Start, Interval, type, c.triggername ".
        " from schedule a, jobchain b, trigger c where a.job = b.job and a.trigger = c.trigger and type = 'v' ".
        "union all ".
        "select schedule, jobdesc, Start, Interval, type, trigger ".
-       " from schedule a, jobchain b where a.job = b.job and type = 't'";
-  $results = $db->query($sql);
+       " from schedule a, jobchain b where a.job = b.job and type = 't'");
   while ($row = $results->fetchArray()) {
     echo "<tr class=block2><td>",$row[1],"</td>";
     if ($row[4]=="t") {
