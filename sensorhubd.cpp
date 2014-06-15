@@ -45,6 +45,7 @@ Added actors
 #include <time.h>
 #include <stdio.h>
 #include <sqlite3.h>
+#include <unistd.h>
 
 using namespace std;
 
