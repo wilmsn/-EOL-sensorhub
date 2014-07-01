@@ -1,7 +1,7 @@
 #!/bin/sh
 #######################################
 #
-# Installskript for sensornet deamon
+# Installskript for sensorhub deamon
 #
 #######################################
 ID=`id | cut -d "=" -f 2 | cut -d "(" -f 1`

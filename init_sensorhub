@@ -10,13 +10,15 @@
 ### END INIT INFO
 
 . /lib/lsb/init-functions
-SENSORHUBPID=`ps -efa | grep "/usr/bin/sensorhubd" | grep -v grep | cut -c 9-15`
+SERVICENAME=sensorhub
+SENSORHUBPIDFILE=/var/run/sensorhubd.pid
+SENSORHUBPID=`cat $SENSORHUBPIDFILE` > /dev/null 2>1
 
 case "$1" in
   start)
     echo -n "[....] Starting sensorhub "
-    if [ -z "$SENSORHUBPID" ]; then 
-      /usr/bin/sensorhubd&
+    if [ ! -e $SENSORHUBPIDFILE ]; then 
+      /usr/bin/sensorhubd -d
       log_end_msg $?
     else
       echo -n "... already running with PID $SENSORHUBPID"
@@ -26,62 +28,19 @@ case "$1" in
   stop)
     echo -n "[....] Stopping sensorhub ..."
     if [ "$SENSORHUBPID" ]; then 
-      kill $SENSORHUBPID
-      echo -n "Sensorhubd: " >> /var/log/sensorhubd.log
-      date >> /var/log/sensorhubd.log
-      echo "Stopping sensorhubd via service sensorhub stop" >> /var/log/sensorhubd.log
+      kill -15 $SENSORHUBPID
       log_end_msg $?
     else
       echo -n "not running ..."
-      log_end_msg 1
-    fi
-    ;;
-  clearlog)
-    echo -n "[....] Stopping sensorhub ..."
-    if [ "$SENSORHUBPID" ]; then
-      kill $SENSORHUBPID
-      date >> /var/log/sensorhubd.log
-      echo "Stopping sensorhubd via service sensorhub stop" >> /var/log/sensorhubd.log
-      log_end_msg $?
-    else
-      echo -n "not running ..."
-      log_end_msg 1
-    fi
-    echo "Delete logfile: /var/log/sensorhubd.log"
-    rm /var/log/sensorhubd.log
-    echo -n "[....] Starting sensorhub "
-    SENSORHUBPID=`ps -efa | grep "/usr/bin/sensorhubd" | grep -v grep | cut -c 9-15`
-    if [ -z "$SENSORHUBPID" ]; then
-      /usr/bin/sensorhubd&
-      log_end_msg $?
-    else
-      echo -n "... already running with PID $SENSORHUBPID"
       log_end_msg 1
     fi
     ;;
   restart)
-    echo -n "[....] Stopping sensorhub ..."
-    if [ "$SENSORHUBPID" ]; then
-      kill $SENSORHUBPID
-      date >> /var/log/sensorhubd.log
-      echo "Stopping sensorhubd via service sensorhub stop" >> /var/log/sensorhubd.log
-      log_end_msg $?
-    else
-      echo -n "not running ..."
-      log_end_msg 1
-    fi
-    echo -n "[....] Starting sensorhub "
-    SENSORHUBPID=`ps -efa | grep "/usr/bin/sensorhubd" | grep -v grep | cut -c 9-15`
-    if [ -z "$SENSORHUBPID" ]; then
-      /usr/bin/sensorhubd&
-      log_end_msg $?
-    else
-      echo -n "... already running with PID $SENSORHUBPID"
-      log_end_msg 1
-    fi
-    ;;
+	/usr/sbin/service $SERVICENAME stop
+	/usr/sbin/service $SERVICENAME start	
+	;;
   *)
-    echo "Usage: /etc/init.d/sensorhub {start|stop|clearlog}"
+    echo "Usage: service $SERVICENAME {start|stop|restart}"
     exit 1
     ;;
 esac

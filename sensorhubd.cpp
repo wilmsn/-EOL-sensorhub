@@ -19,6 +19,12 @@ Added Web-GUI (German only)
 V0.4:
 Database structure changed and extended - not compatible with V0.3 
 Added actors
+V0.5
+Different start modes:
+./sensorhubd --help => for help
+./sensorhubd => start in shell with detailed logging
+./sensorhubd -d => starts as a daemon
+To stop the programm press "CTRL C" or use "kill -15 <PID>"
 
 
 
@@ -28,10 +34,13 @@ Added actors
 
 */
 #define DEBUG 1
-#define DBNAME "/var/database/sensorhub.db"
+//#define DBFILE "/var/database/sensorhub_test.db"
+#define DBFILE "/var/database/sensorhub.db"
 #define LOGFILE "/var/log/sensorhubd.log"
+#define PIDFILE "/var/run/sensorhubd.pid"
 #define ERRSTR "ERROR: "
 #define DEBUGSTR "Debug: "
+#define MSG_KEY 4711
 
 //--------- End of global define -----------------
 
@@ -43,11 +52,30 @@ Added actors
 #include <RF24.h>
 #include <RF24Network.h>
 #include <time.h>
+#include <sys/time.h>
 #include <stdio.h>
 #include <sqlite3.h>
 #include <unistd.h>
+#include <getopt.h>
+#include <syslog.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
+#include <signal.h>
+#include <stdlib.h>
 
 using namespace std;
+
+enum logmode_t { systemlog, interactive, logfile };
+logmode_t logmode;
+int loglevel=4;
+int verboselevel = 2;
+bool start_daemon=false;
+bool use_logfile=false;
+char logfilename[300];
+FILE * pidfile_ptr;
+FILE * logfile_ptr;
 
 // Setup for GPIO 25 CE and CE0 CSN with SPI Speed @ 8Mhz
 RF24 radio(RPI_V2_GPIO_P1_22, BCM2835_SPI_CS0, BCM2835_SPI_SPEED_1MHZ);  
@@ -70,9 +98,17 @@ struct order_t {
   float value;
 };
 
+// Structure for incoming messages from other programms (like PHP)
+struct mesg_buf_t {
+    long mtype;
+    char mesg[5];
+};
+mesg_buf_t mesg_buf;
+
 int orderloopcount=0;
 int ordersqlexeccount=0;
 bool ordersqlrefresh=true;
+int msqid;
 
 sqlite3 *db;
 
@@ -85,39 +121,52 @@ char info_exec_sql[]="Info: SQL executed via do_sql: ";
 char err_prepare[]=ERRSTR "Could not prepare SQL statement";
 char err_execute[]=ERRSTR "Could not execute SQL statement";
 char err_finalize[]=ERRSTR "Could not finalize SQL statement";
-char err_opendb[]=ERRSTR "Opening database: " DBNAME " failed !!!!!";
+char err_opendb[]=ERRSTR "Opening database: " DBFILE " failed !!!!!";
 char msg_startup[]="Startup sensorhubd";
 
-bool logmsg(char *mymsg){
-  FILE * pFile;
-  bool exitcode=true; 
-  char buf[3];
-  pFile = fopen (LOGFILE,"a");
-  if (pFile!=NULL) {
-    time_t now = time(0);
-    tm *ltm = localtime(&now);
-    fprintf (pFile, "Sensorhubd: %d.", ltm->tm_year + 1900 );
-    if ( ltm->tm_mon + 1 < 10) sprintf(buf,"0%d",ltm->tm_mon + 1); else sprintf(buf,"%d",ltm->tm_mon + 1);
-    fprintf (pFile, "%s.", buf );
-    if ( ltm->tm_mday < 10) sprintf(buf,"0%d",ltm->tm_mday); else sprintf(buf,"%d",ltm->tm_mday);
-    fprintf (pFile, "%s ", buf );
-    if ( ltm->tm_hour < 10) sprintf(buf," %d",ltm->tm_hour); else sprintf(buf,"%d",ltm->tm_hour);
-    fprintf (pFile, "%s:", buf );
-    if ( ltm->tm_min < 10) sprintf(buf,"0%d",ltm->tm_min); else sprintf(buf,"%d",ltm->tm_min);
-    fprintf (pFile, "%s:", buf );
-    if ( ltm->tm_sec < 10) sprintf(buf,"0%d",ltm->tm_sec); else sprintf(buf,"%d",ltm->tm_sec);
-    fprintf (pFile, "%s : %s \n", buf, mymsg );
-    fclose (pFile);
-  } else {
-    exitcode = false;
-  }
-  return exitcode;
+long runtime(long starttime) {
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	return (tv.tv_sec - starttime) *1000 + tv.tv_usec / 1000;
+}
+
+void logmsg(int mesgloglevel, char *mymsg){
+	if ( logmode == logfile ) {
+		if (mesgloglevel <= verboselevel) {
+			char buf[3];
+			logfile_ptr = fopen (logfilename,"a");
+			if (logfile_ptr!=NULL) {
+				time_t now = time(0);
+				tm *ltm = localtime(&now);
+				fprintf (logfile_ptr, "Sensorhubd: %d.", ltm->tm_year + 1900 );
+				if ( ltm->tm_mon + 1 < 10) sprintf(buf,"0%d",ltm->tm_mon + 1); else sprintf(buf,"%d",ltm->tm_mon + 1);
+				fprintf (logfile_ptr, "%s.", buf );
+				if ( ltm->tm_mday < 10) sprintf(buf,"0%d",ltm->tm_mday); else sprintf(buf,"%d",ltm->tm_mday);
+				fprintf (logfile_ptr, "%s ", buf );
+				if ( ltm->tm_hour < 10) sprintf(buf," %d",ltm->tm_hour); else sprintf(buf,"%d",ltm->tm_hour);
+				fprintf (logfile_ptr, "%s:", buf );
+				if ( ltm->tm_min < 10) sprintf(buf,"0%d",ltm->tm_min); else sprintf(buf,"%d",ltm->tm_min);
+				fprintf (logfile_ptr, "%s:", buf );
+				if ( ltm->tm_sec < 10) sprintf(buf,"0%d",ltm->tm_sec); else sprintf(buf,"%d",ltm->tm_sec);
+				fprintf (logfile_ptr, "%s : %s \n", buf, mymsg );
+				fclose (logfile_ptr);
+			}
+		}	
+    } else if ( logmode == interactive ) {
+		if (mesgloglevel <= verboselevel) {
+			fprintf(stdout, "%s\n", mymsg); 
+		}
+	} else { // log via systemlog
+		if (mesgloglevel <= verboselevel) {
+			openlog ( "sensorhubd", LOG_PID | LOG_CONS| LOG_NDELAY, LOG_LOCAL0 );
+			syslog( LOG_NOTICE, "%s\n", mymsg);
+			closelog();
+		}
+	}
 }
 
 void log_sqlite3_errstr(int dbrc){
   char retval[80];    
-  FILE * pFile;
-  pFile = fopen (LOGFILE,"a");
   switch (dbrc) {
     case 1:
       sprintf(retval,"SQLITE_ERROR:1: SQL error or missing database");
@@ -187,19 +236,16 @@ void log_sqlite3_errstr(int dbrc){
       break;
     case 23:
       sprintf(retval,"SQLITE_AUTH:23: Authorization denied");
-//    #define SQLITE_ROW         100  /* sqlite_step() has another row ready */
-//    #define SQLITE_DONE        101  /* sqlite_step() has finished executing */
       break;
     default:
       sprintf(retval,"Unknown Error from SQLITE");
   }
-  fprintf (pFile, "SQLite: %s \n", retval );
-  fclose (pFile);
+  logmsg(2, retval );
 }
 
 void log_db_err(int rc, char *errstr, char *mysql) {
-    logmsg(errstr);
-    logmsg(mysql);
+    logmsg(3, errstr);
+    logmsg(3, mysql);
     log_sqlite3_errstr(rc);
 }
 
@@ -207,8 +253,8 @@ void do_sql(char *mysql) {
     sqlite3_stmt *mystmt;   
 	int rc;
 #ifdef DEBUG 
-    logmsg(info_exec_sql);        
-    logmsg(mysql);        
+    logmsg(9, info_exec_sql);        
+    logmsg(9, mysql);        
 #endif        
 	rc = sqlite3_prepare(db, mysql, -1, &mystmt, 0 ); 
 	if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, mysql);
@@ -218,7 +264,7 @@ void do_sql(char *mysql) {
 	if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, mysql);
 }
 
-bool del_messageentry(uint16_t Job, uint16_t seq) {
+bool del_messagebuffer_entry(uint16_t Job, uint16_t seq) {
     sqlite3_stmt *mystmt;   
 	int rc;
 	char mysql_stmt[150];
@@ -234,8 +280,8 @@ bool del_messageentry(uint16_t Job, uint16_t seq) {
 	rc=sqlite3_finalize(mystmt);
 	if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, mysql_stmt);
 #ifdef DEBUG 
-	sprintf(mydebug, "Info: del_messageentry found %d records", recordcount);
-    logmsg(mydebug);               
+	sprintf(mydebug, "Info: del_messagebuffer_entry found %d records", recordcount);
+    logmsg(8, mydebug);               
 #endif  
 	if (recordcount == 1) {
 		sprintf(mysql_stmt, " delete from messagebuffer where Job = %u and seq = %u "
@@ -313,11 +359,78 @@ int getparentnodeadr(int nodeadr) {
 	return parentnodeadr;
 }
 
+void sighandler(int signal) {
+    char debug[80];
+	sprintf(debug, "\nSIGTERM: Shutting down ...");
+	logmsg(1, debug);
+    unlink(PIDFILE);
+	msgctl(msqid, IPC_RMID, NULL);
+    exit (0);
+}
 
-int main(int argc, char** argv) {
+void usage(char *prgname) {
+	fprintf(stdout, "Usage: %s <option>\n", prgname); 
+	fprintf(stdout, "with options: \n");
+	fprintf(stdout, "   -h or --help \n");
+	fprintf(stdout, "         Print help\n");
+	fprintf(stdout, "   -d or --daemon\n");
+    fprintf(stdout, "         Start as daemon\n");
+	fprintf(stdout, "   -l <logfilename>  or --logfile <logfilename> \n");
+    fprintf(stdout, "         Write log to logfile\n");
+	fprintf(stdout, "For clean exit use \"CTRL-C\" or \"kill -15 <pid>\"\n\n");  
+}
+
+int main(int argc, char* argv[]) {
     sqlite3_stmt *stmt;   
+    pid_t pid;
 	char debug[300];
 	int init_jobno = 1;
+	int c;
+	long starttime=time(0);
+
+	// processing argc and argv[]
+	while (1) {
+		static struct option long_options[] =
+			{	{"daemon",  no_argument, 0, 'd'},
+				{"verbose",  required_argument, 0, 'v'},
+				{"logfile",    required_argument, 0, 'l'},
+				{"help", no_argument, 0, 'h'},
+				{0, 0, 0, 0} };
+           /* getopt_long stores the option index here. */
+		int option_index = 0;
+		c = getopt_long (argc, argv, "?dhv:l:",long_options, &option_index);
+		/* Detect the end of the options. */
+		if (c == -1) break;
+		switch (c) {
+			case 'd':
+            start_daemon = true;
+			break;
+            case 'v':
+				verboselevel = (optarg[0] - '0') * 1;
+			break;
+			case 'l':
+				strcpy(logfilename, optarg);
+				use_logfile=true;
+			break;
+			case 'h':
+			case '?':
+				usage(argv[0]);
+				exit (0);
+			break;
+			default:
+				usage (argv[0]);
+				abort ();
+		}
+	}
+       /* Print any remaining command line arguments (not options). */
+	if (optind < argc) {
+		printf ("non-option ARGV-elements: ");
+		while (optind < argc) printf ("%s ", argv[optind++]);
+		putchar ('\n');
+	}
+	// END processing argc and argv[]
+
+
 	order_t order[7]; // we do not handle more than 6 orders (one per subnode 1...6) at one time
 	for (int i=1; i<7; i++) { // init order array
 		order[i].Job = 0;
@@ -326,10 +439,70 @@ int main(int argc, char** argv) {
 		order[i].channel  = 0;
 		order[i].value = 0;
 	}
-	if (! logmsg(msg_startup)) {
-		printf("sensorhubd: Error opening logfile: %s \n",LOGFILE);
-		return 1;
+	if( access( PIDFILE, F_OK ) != -1 ) {
+    // PIDFILE exists => terminate !!!
+	    fprintf(stdout, "PIDFILE exists, terminating\n\n");
+		exit(1);
 	}
+	signal(SIGTERM, sighandler);
+	signal(SIGINT, sighandler);
+	logmode=interactive;
+	if ( use_logfile ) {
+	// log to logfile
+		logmode = logfile;
+		logfile_ptr = fopen (logfilename,"a");
+		if (logfile_ptr==NULL) {
+			fprintf(stdout,"Could not open %s for writing\n", argv[2]);
+		    exit (1);
+		}
+		fclose(logfile_ptr);
+	}
+    if (start_daemon) {
+    // starts sensorhub as a deamon
+		pid = fork ();
+		if (pid == 0) {
+		// Child prozess
+		chdir ("/");
+		umask (0);
+//		for (i = sysconf (_SC_OPEN_MAX); i > 0; i--) close (i);
+		if ( ! use_logfile ) logmode=systemlog;
+		sprintf(debug, "Starting up ....");
+		logmsg(1,debug);
+		} else if (pid > 0) { 
+		// Parentprozess -> exit and return to shell
+			// write a message to the console
+			sprintf(debug, "Starting sensorhubd as daemon...\n");
+			fprintf(stdout, debug);
+			// and exit
+			exit (0);
+		} else {   
+		// nagativ is an error
+			exit (1);
+		}
+	}
+	if ( ! (start_daemon || use_logfile) ) {
+		sprintf(debug,"Using interactive mode ....\n");
+		logmsg(1, debug);
+	}
+	// save own pid tp pidfile
+	pid=getpid();
+	pidfile_ptr = fopen (PIDFILE,"w");
+	if (pidfile_ptr==NULL) {
+		sprintf(debug,"Can't write PIDFILE! Exit programm ....\n");
+		fprintf(stdout, debug);
+		exit (1);
+	}
+	fprintf (pidfile_ptr, "%d", pid );
+	fclose(pidfile_ptr);
+	sprintf(debug, "sensorhub running with PID: %d\n", pid);
+	logmsg(1, debug);
+    // set up message queue
+    if((msqid = msgget(MSG_KEY, 0666 | IPC_CREAT)) == -1) {
+        sprintf(debug, "Failed to open messagequeue");
+		logmsg(1, debug);
+        exit(1);
+    }
+	sleep(2);
 	radio.begin();
 	delay(5);
 	network.begin( 90, 0);
@@ -338,14 +511,27 @@ int main(int argc, char** argv) {
 	radio.printDetails();
 #endif        
 	char sql_stmt[300];
-	int rc = sqlite3_open("/var/database/sensorhub.db", &db);
-	if (rc) { logmsg (err_opendb);  exit(99); }
+	int rc = sqlite3_open(DBFILE, &db);
+	if (rc) { logmsg (1, err_opendb);  exit(99); }
     // Start Cleanup
     sprintf (sql_stmt, "delete from messagebuffer "); 
+#ifdef DEBUG 
+	logmsg(9, sql_stmt);        
+#endif        
     do_sql(sql_stmt);
     // End Cleanup	
-    long int time_old=0;
+    long int dispatch_time=0;
+	long int sent_time=0;
+	long int akt_time;
     while(1) {
+		// check for external messages
+		if (msgrcv(msqid, &mesg_buf, sizeof(mesg_buf.mesg), 0, IPC_NOWAIT) > 0) {
+			sprintf(debug, "received Message: %s", mesg_buf.mesg);
+			logmsg(7,debug);
+//			if ( mesg_buf.mesg == 1 ) {
+				ordersqlrefresh = true;
+//			}
+		}
 		network.update();
 		if ( network.available() ) {
 //
@@ -355,40 +541,40 @@ int main(int argc, char** argv) {
 #ifdef DEBUG 
 			sprintf(debug, DEBUGSTR "Received: Channel: %u from Node: %o to Node: %o Job %d Seq %d Value %f "
 						, rxheader.type, rxheader.from_node, rxheader.to_node, payload.Job, payload.seq, payload.value);
-			logmsg(debug);
+			logmsg(7, debug);
 #endif        
 			uint16_t sendernode=rxheader.from_node;
 			switch (rxheader.type) {
 
 				case 1 ... 20: {
 				// Sensor 
-					if (del_messageentry(payload.Job, payload.seq)) {
+					if (del_messagebuffer_entry(payload.Job, payload.seq)) {
 						store_sensor_value(payload.Job, payload.seq, payload.value); 
 #ifdef DEBUG 
 						sprintf(debug, DEBUGSTR "Value of sensor %u on Node: %o is %f ", rxheader.type, sendernode, payload.value);
-						logmsg(debug);        
+						logmsg(7, debug);        
 #endif        
 					}
 				break; }
  
 				case 21 ... 99: {
 				// Actor 
-					if (del_messageentry(payload.Job, payload.seq)) {
+					if (del_messagebuffer_entry(payload.Job, payload.seq)) {
 						store_actor_value(payload.Job, payload.seq, payload.value); 
 #ifdef DEBUG 
 						sprintf(debug, DEBUGSTR "Value of sensor %u on Node: %o is %f ", rxheader.type, sendernode, payload.value);
-						logmsg(debug);        
+						logmsg(7, debug);        
 #endif        
 					}
 				break; }
 
 				case 101: {
 				// battery volatage
-					if (del_messageentry(payload.Job, payload.seq)) {
+					if (del_messagebuffer_entry(payload.Job, payload.seq)) {
 						store_sensor_value(payload.Job, payload.seq, payload.value); 
 #ifdef DEBUG 
 						sprintf(debug, DEBUGSTR "Voltage of Node: %o is %f ", sendernode, payload.value);
-						logmsg(debug);        
+						logmsg(7, debug);        
 #endif        
 						sprintf(sql_stmt,"update node set Battery_act = %f where node = '0%o'", payload.value, sendernode);
 						do_sql(sql_stmt);
@@ -397,29 +583,29 @@ int main(int argc, char** argv) {
 				
 				case 111: {
 #ifdef DEBUG 
-					sprintf(debug, DEBUGSTR "Init of Node: %o finished: Sleeptime set to %f ", sendernode, payload.value);
-					logmsg(debug);        
+					sprintf(debug, DEBUGSTR "Node: %o: Sleeptime set to %f ", sendernode, payload.value);
+					logmsg(7, debug);        
 #endif        
-					del_messageentry(payload.Job, payload.seq);  
+					del_messagebuffer_entry(payload.Job, payload.seq);  
 				break; }
 				
 				case 112: {
-					txheader.type=112;
-					bool radio_always_on = (payload.value >0.5);
+                    //					txheader.type=112;
 #ifdef DEBUG 
+					bool radio_always_on = (payload.value >0.5);
 					if ( radio_always_on ) sprintf(debug, "---Debug: Radio allways on for Node: %o.", sendernode);
 					else sprintf(debug, "---Debug: Radio allways off for Node: %o.", sendernode);
-					logmsg(debug);        
+					logmsg(7, debug);        
 #endif        
-					del_messageentry(payload.Job, payload.seq);  
+					del_messagebuffer_entry(payload.Job, payload.seq);  
 				break;  } 
 				
 				case 118: {
 #ifdef DEBUG 
 					sprintf(debug, DEBUGSTR "Node: %o Init finished.", sendernode);
-					logmsg(debug);        
+					logmsg(7, debug);        
 #endif        
-					del_messageentry(payload.Job, payload.seq);  
+					del_messagebuffer_entry(payload.Job, payload.seq);  
 				break; }
 				
 				case 119: {
@@ -493,8 +679,8 @@ int main(int argc, char** argv) {
 //
 // Dispatcher: Look if the is anything to schedule
 //
-		if ( time(0) > time_old + 59 ) {  // check every minute if we have jobs to schedule
-			time_old = time(0);
+		if ( time(0) > dispatch_time + 59 ) {  // check every minute if we have jobs to schedule
+			dispatch_time = time(0);
 //
 // Cleanup old jobs that have not been executed during the last 10 minutes
 //
@@ -548,14 +734,18 @@ int main(int argc, char** argv) {
 //
 // End Dispatcher
 //
-			orderloopcount=0;
+//			orderloopcount=0;
 			ordersqlrefresh=true;
 		}
 //
 // Orderloop: Tell the nodes what they have to do
 //
-		if ( orderloopcount == 0 ) {
-			if (ordersqlexeccount > 30 || ordersqlrefresh) {
+		akt_time=runtime(starttime);
+		if ( akt_time > sent_time + 499 ) {  // send every 500 milliseconds
+			sent_time=akt_time;
+//		if ( orderloopcount == 0 ) {
+			if ( ordersqlrefresh ) {
+//			if (ordersqlexeccount > 30 || ordersqlrefresh) {
 				for (int i=0; i<7; i++) {
 					sprintf (sql_stmt, "select job, seq, node, channel, value from messagebuffer where substr(Node,length(node),1) = '%d' order by CAST(node as integer), priority LIMIT 1 ",i);
 					rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
@@ -572,42 +762,44 @@ int main(int argc, char** argv) {
 					}
 					rc=sqlite3_finalize(stmt);
 					if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
-					ordersqlexeccount=0;
+//					ordersqlexeccount=0;
 					ordersqlrefresh=false;
 				}
 			}
-			ordersqlexeccount++;
-			int i=1;
-			while (i<7) {
-				if (order[i].Job) {
-					txheader.from_node = 0;
-					payload.Job = order[i].Job;
-					payload.seq = order[i].seq;
-					txheader.to_node  = order[i].to_node;
-					txheader.type  = order[i].channel;
-					payload.value = order[i].value;
-					if (network.write(txheader,&payload,sizeof(payload))) {
+//			ordersqlexeccount++;
+			if ( (order[1].Job || order[2].Job || order[3].Job || order[4].Job || order[5].Job || order[6].Job)) {
+				int i=1;
+				while (i<7) {
+					if (order[i].Job) {
+						txheader.from_node = 0;
+						payload.Job = order[i].Job;
+						payload.seq = order[i].seq;
+						txheader.to_node  = order[i].to_node;
+						txheader.type  = order[i].channel;
+						payload.value = order[i].value;
+						if (network.write(txheader,&payload,sizeof(payload))) {
 #ifdef DEBUG 
-						sprintf(debug, DEBUGSTR "Send: Channel: %u from Node: %o to Node: %o Job %d Seq %d Value %f "
-								, txheader.type, txheader.from_node, txheader.to_node, payload.Job, payload.seq, payload.value);
-						logmsg(debug); 
-					} else {		
-						sprintf(debug, DEBUGSTR "Failed: Send: Channel: %u from Node: %o to Node: %o Job %d Seq %d Value %f "
-								, txheader.type, txheader.from_node, txheader.to_node, payload.Job, payload.seq, payload.value);
-						logmsg(debug); 
+							sprintf(debug, DEBUGSTR "Send: Channel: %u from Node: %o to Node: %o Job %d Seq %d Value %f "
+									, txheader.type, txheader.from_node, txheader.to_node, payload.Job, payload.seq, payload.value);
+							logmsg(7, debug); 
+						} else {		
+							sprintf(debug, DEBUGSTR "Failed: Send: Channel: %u from Node: %o to Node: %o Job %d Seq %d Value %f "
+									, txheader.type, txheader.from_node, txheader.to_node, payload.Job, payload.seq, payload.value);
+							logmsg(7, debug); 
 #endif    
-					}  
+						}  
+					}
+					i++; 
 				}
-				i++; 
 			}
 		} // /orderloopcount
-		orderloopcount++;
-		if ( orderloopcount > 200 ) {  orderloopcount=0; }
+//		orderloopcount++;
+//		if ( orderloopcount > 200 ) {  orderloopcount=0; }
 		usleep(1000); 
 //
 //  end orderloop 
 //
-		if (! (order[1].Job || order[2].Job || order[3].Job || order[4].Job || order[5].Job || order[6].Job)) usleep(100000);
+//		if (! (order[1].Job || order[2].Job || order[3].Job || order[4].Job || order[5].Job || order[6].Job)) usleep(100000);
 	} // while(1)
 	return 0;
 }
