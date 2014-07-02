@@ -130,6 +130,37 @@ long runtime(long starttime) {
 	return (tv.tv_sec - starttime) *1000 + tv.tv_usec / 1000;
 }
 
+int getnodeadr(char *node) {
+	int mynodeadr = 0;
+	bool err = false;
+	char t[5];
+	for ( int i = 0; (node[i] > 0) && (! err); i++ ) {
+		if ( mynodeadr > 0 ) mynodeadr = (mynodeadr << 3);
+		sprintf(t,"%c",node[i]); 
+		mynodeadr = mynodeadr + atoi(t);
+		err = (node[i] == '6' || node[i] == '7' || node[i] == '8' || node[i] == '9' || (( i > 0 ) && ( node[i] == '0' ))); 
+	}
+	if (err) mynodeadr = 0;
+	return mynodeadr;
+}
+/*
+void getnodestr(uint16_t node, char* nodestr) {
+	uint16_t aktpos=0b0000000000000111;
+	for(int i=5;i>0;i--){
+		if ((node>>(3*(5-i)) & aktpos) > 0) {
+			nodestr[i]=(node>>(3*(5-i)) & aktpos) + '0';
+		} else {
+			nodestr[i]='0';
+		}
+		nodestr[0]='0';
+	}
+    while(nodestr[1]=='0') {
+		for(int j=0;j<6;j++) {
+			nodestr[j]=nodestr[j+1];
+		}
+	}
+}
+*/
 void logmsg(int mesgloglevel, char *mymsg){
 	if ( logmode == logfile ) {
 		if (mesgloglevel <= verboselevel) {
@@ -294,38 +325,46 @@ bool del_messagebuffer_entry(uint16_t Job, uint16_t seq) {
 	}
 }
 
-void check_trigger(float last_val, float akt_val, int sensor) {
+void check_trigger(float last_value, float akt_value, int sensor) {
   int edge; // 0=> falling; 1=> rising
-  if ( akt_val >= last_val) { edge = 1;  } else { edge = 0;  }  
+  if ( akt_value >= last_value) { edge = 1;  } else { edge = 0;  }  
   // check if there is a trigger for this case
   
   
 }
 
-void store_sensor_value(uint16_t job, uint16_t seq, float val) {
+void store_sensor_value(uint16_t job, uint16_t seq, float akt_value) {
     sqlite3_stmt *stmt;   
 	char sql_stmt[300];
-	float last_val;
+	float last_value=-999;
 	int sensor;
-	sprintf(sql_stmt,"select max(utime), sensor, value from sensordata where sensor = (select id from job where job = %u and seq = %u )",job, seq);              
-	int rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
-	if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, sql_stmt);
-	if (sqlite3_step(stmt) == SQLITE_ROW) {
-		last_val = sqlite3_column_double (stmt, 2);
-		sensor  = sqlite3_column_int (stmt, 1);
-	}
-	rc=sqlite3_finalize(stmt);
-	if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
-	check_trigger(last_val, val, sensor);
+
 	sprintf(sql_stmt,"insert or replace into sensordata (sensor, utime, value) "
 					"select id, "
 					"strftime('%%s', datetime('now','localtime')), %f "
 					" from job "
-					"where job = %u and seq = %u ", val, job, seq);
+					"where job = %u and seq = %u ", akt_value, job, seq);
 	do_sql(sql_stmt);
-	sprintf(sql_stmt,"update sensor set last_value = %f, last_TS = datetime('now', 'localtime') "
-					" where sensor = (select id from job where job = %u and seq = %u and type=1) ", val, job, seq);
+	sprintf(sql_stmt,"select akt_value, sensor from sensor "
+					" where sensor = (select id from job where job = %u and seq = %u and type=1) "
+					, job, seq);
+	int rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
+	if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, sql_stmt);
+	if (sqlite3_step(stmt) == SQLITE_ROW) {
+		last_value = sqlite3_column_double (stmt, 0);
+		sensor  = sqlite3_column_int (stmt, 1);
+	}
+	rc=sqlite3_finalize(stmt);
+	if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
+	sprintf(sql_stmt,"update sensor set last_value= %f, akt_value = %f, last_ts = datetime('now', 'localtime') "
+					" where sensor = (select id from job where job = %u and seq = %u and type=1) "
+					 , last_value, akt_value, job, seq);
 	do_sql(sql_stmt);
+	sprintf(sql_stmt,"update actor set sourcesensorvalue= %f "
+					" where source = 's' and value = (select id from job where job = %u and seq = %u and type=1) "
+					 , akt_value, job, seq);
+	do_sql(sql_stmt);
+	check_trigger(last_value, akt_value, sensor);
 }
 
 void store_actor_value(uint16_t job, uint16_t seq, float val) {
@@ -334,20 +373,7 @@ void store_actor_value(uint16_t job, uint16_t seq, float val) {
 	do_sql(sql_stmt);
 }
 
-int getnodeadr(char *node) {
-	int mynodeadr = 0;
-	bool err = false;
-	char t[5];
-	for ( int i = 0; (node[i] > 0) && (! err); i++ ) {
-		if ( mynodeadr > 0 ) mynodeadr = (mynodeadr << 3);
-		sprintf(t,"%c",node[i]); 
-		mynodeadr = mynodeadr + atoi(t);
-		err = (node[i] == '6' || node[i] == '7' || node[i] == '8' || node[i] == '9' || (( i > 0 ) && ( node[i] == '0' ))); 
-	}
-	if (err) mynodeadr = 0;
-	return mynodeadr;
-}
-
+/*
 int getparentnodeadr(int nodeadr) {
 	int parentnodeadr=-1;
 	if ( nodeadr > 0x7FFF ) parentnodeadr = 0;
@@ -358,7 +384,7 @@ int getparentnodeadr(int nodeadr) {
 	else parentnodeadr = 0;
 	return parentnodeadr;
 }
-
+*/
 void sighandler(int signal) {
     char debug[80];
 	sprintf(debug, "\nSIGTERM: Shutting down ...");
@@ -691,8 +717,8 @@ int main(int argc, char* argv[]) {
 // Case 1: Jobs that run  immeadeately (start = -1) and run only once (interval = -1)
 //
 			sprintf (sql_stmt, "insert into Scheduled_Jobs (job)"
-							" select job from schedule "
-							"  where start = '-1' and interval = -1 ");
+							   " select job from schedule "
+							   "  where start = '-1' and interval = -1 ");
 			do_sql(sql_stmt);
 			sprintf (sql_stmt, "delete from schedule where start = '-1' and interval = -1 "); 
 			do_sql(sql_stmt);
@@ -700,8 +726,8 @@ int main(int argc, char* argv[]) {
 // Case 2: Jobs that run at a scheduled time (start) and run only once (interval = -1)
 //
 			sprintf (sql_stmt, "insert into Scheduled_Jobs (job)"
-							" select job from schedule "
-							"  where datetime(start) <= datetime('now','localtime') and interval = -1 ");
+							   " select job from schedule "
+							   "  where datetime(start) <= datetime('now','localtime') and interval = -1 ");
 			do_sql(sql_stmt);
 			sprintf (sql_stmt, "delete from schedule where start != '-1' and datetime(start) <= datetime('now','localtime') and interval = -1 "); 
 			do_sql(sql_stmt);
@@ -709,8 +735,8 @@ int main(int argc, char* argv[]) {
 // Case 3: Jobs that start immeadeately (start = -1) and run every <interval> minutes
 // 
 			sprintf (sql_stmt, "insert into Scheduled_Jobs (job)"
-							" select job from schedule "
-							" where start = '-1' and interval > 0 ");
+							   " select job from schedule "
+							   " where start = '-1' and interval > 0 ");
 			do_sql(sql_stmt);
 			sprintf (sql_stmt, "update schedule set start = datetime('now', 'localtime', '+'||interval||' minutes') where start = '-1' and interval > 0 "); 
 			do_sql(sql_stmt);
@@ -718,15 +744,15 @@ int main(int argc, char* argv[]) {
 // Case 4: Jobs that run frequently - increment "start" by "interval" minutes 
 //
 			sprintf (sql_stmt, "insert into Scheduled_Jobs (job)"
-							" select job from schedule"
-							"  where datetime(start) <= datetime('now','localtime') and interval > 0 ");
+							   " select job from schedule"
+							   "  where datetime(start) <= datetime('now','localtime') and interval > 0 ");
 			do_sql(sql_stmt);
 			sprintf (sql_stmt, "update schedule set start = datetime(start, '+'||interval||' minutes') "
-								"where datetime(start) <= datetime('now','localtime') and interval > 0 "); 
+							   "where datetime(start) <= datetime('now','localtime') and interval > 0 "); 
 			do_sql(sql_stmt);
 // Put all Jobentries into messagebuffer
-			sprintf (sql_stmt, "insert into messagebuffer (job,seq,node,channel,value,utime)"
-								"  select job, seq, node, channel, value,strftime('%%s','now') from Scheduled_messages ");
+			sprintf (sql_stmt, "insert into messagebuffer (job,seq,node,channel,utime)"
+							   "  select job, seq, node, channel, strftime('%%s','now') from Scheduled_messages ");
 			do_sql(sql_stmt);
 // Delete all entries in Scheduled_Jobs, we dont need them any more
 			sprintf (sql_stmt, " delete from Scheduled_Jobs ");
@@ -747,7 +773,9 @@ int main(int argc, char* argv[]) {
 			if ( ordersqlrefresh ) {
 //			if (ordersqlexeccount > 30 || ordersqlrefresh) {
 				for (int i=0; i<7; i++) {
-					sprintf (sql_stmt, "select job, seq, node, channel, value from messagebuffer where substr(Node,length(node),1) = '%d' order by CAST(node as integer), priority LIMIT 1 ",i);
+					//sprintf (sql_stmt, "select job, seq, node, channel, value from messagebuffer where substr(Node,length(node),1) = '%d' order by CAST(node as integer), priority, seq LIMIT 1 ",i);
+					sprintf (sql_stmt, 	"select a.job, a.seq, a.node, a.channel, ifnull(b.sourcesensorvalue,0) from messagebuffer a left outer join actor b on a.node = b.node and a.channel = b.channel "
+										" where substr(a.Node,length(a.node),1) = '%d' order by CAST(a.node as integer), priority, seq LIMIT 1 ", i);
 					rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
 					if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, sql_stmt);
 					order[i].Job = 0;
