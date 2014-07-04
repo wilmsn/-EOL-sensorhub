@@ -6,7 +6,7 @@ CREATE TABLE Sensor
        (Sensor INT PRIMARY KEY, Sensorinfo TEXT, Node TEXT, Channel INT, Last_Value FLOAT, Last_TS TEXT, Akt_Value FLOAT,
        FOREIGN KEY (Node) REFERENCES Node(Node) );
 CREATE TABLE Trigger
- (Trigger INT PRIMARY KEY, Triggername TEXT, Trigger_sensor INT, Trigger_value FLOAT, Trigger_edge INT);
+ (Trigger INT PRIMARY KEY, Triggername TEXT, Trigger_sensor INT, Trigger_setlevel FLOAT, Trigger_resetlevel FLOAT, Trigger_state TEXT);
 CREATE TABLE "actor"
 (Actor INT PRIMARY KEY, Actorinfo TEXT, Node TEXT, Channel INT, Source INT, Value FLOAT, sourcesensorvalue default 0,
 FOREIGN KEY (Node) REFERENCES Node(Node) );
@@ -42,12 +42,23 @@ select sensor, sensorinfo, nodename, last_value, last_ts
  from sensor b, node c
 where b.node = c.node
 order by nodename;
+CREATE VIEW messagebuffer_input as 
+select a.job, a.seq, a.node, a.channel, ifnull(b.sourcesensorvalue,0) as value from messagebuffer a left outer join actor b on a.node = b.node and a.channel = b.channel
+ where b.source = 's'
+union all
+select a.job, a.seq, a.node, a.channel, ifnull(b.value,0) as value from messagebuffer a left outer join actor b on a.node = b.node and a.channel = b.channel
+ where b.source = 'v';
 CREATE VIEW Scheduled_messages as
-       SELECT a.job, a.seq, b.node, b.channel from job a, sensor b
+       SELECT a.job, a.seq, b.node, b.channel, 0 as value from job a, sensor b
          where  a.type = 1 and a.id = b.sensor and a.job in ( select job from Scheduled_Jobs )
        union all
-       SELECT a.job, a.seq, b.node, b.channel from job a, actor b
-         where  a.type = 2 and a.id = b.actor and a.job in ( select job from Scheduled_Jobs );
+       SELECT a.job, a.seq, b.node, b.channel, c.Last_Value from job a, actor b, sensor c
+         where  a.type = 2 and a.id = b.actor and a.job in ( select job from Scheduled_Jobs )
+                    and b.source ='s' and c.sensor = b.Value
+       union all
+       SELECT a.job, a.seq, b.node, b.channel, b.Value from job a, actor b
+         where  a.type = 2 and a.id = b.actor and a.job in ( select job from Scheduled_Jobs )
+                    and b.source ='v';
 CREATE INDEX sensordata_sensor on sensordata(sensor);
 CREATE INDEX sensordata_sensor_utime on sensordata(sensor,utime desc);
 CREATE INDEX sensordata_utime on sensordata(utime);
