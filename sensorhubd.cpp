@@ -333,19 +333,32 @@ void check_trigger(float last_value, float akt_value, int sensor) {
 	char sql_stmt[300];
 
 	if ( akt_value > last_value ) { // rising edge !!!
+	// case 1: akt_value > Trigger_setlevel > Trigger_resetlevel  ==> Set the trigger and start  
 		sprintf(sql_stmt,"insert into scheduled_jobs "
                          "select job from schedule where type = 'v' and trigger in ( "
-                         "select trigger from trigger where Trigger_setlevel > Trigger_resetlevel and %f > Trigger_setlevel and Trigger_state = 'r' and trigger_sensor = %d )", akt_value, sensor);
+                         "select trigger from trigger where %f > Trigger_setlevel and Trigger_setlevel > Trigger_resetlevel "
+						 "       and Trigger_state = 'r' and trigger_sensor = %d )", akt_value, sensor);
 		do_sql(sql_stmt);
-		sprintf(sql_stmt,"update trigger set Trigger_state = 's' where Trigger_setlevel > Trigger_resetlevel and %f > Trigger_setlevel and Trigger_state = 'r' and trigger_sensor = %d ", akt_value, sensor);
+		sprintf(sql_stmt,"update trigger set Trigger_state = 's' where %f > Trigger_setlevel and Trigger_setlevel > Trigger_resetlevel "
+                         "       and Trigger_state = 'r' and trigger_sensor = %d ", akt_value, sensor);
 		do_sql(sql_stmt);
+	// case 2: akt_value > Trigger_resetlevel > Trigger_setlevel  ==> Reset the trigger	
+		sprintf(sql_stmt,"update trigger set Trigger_state = 'r' where %f > Trigger_resetlevel and Trigger_resetlevel > Trigger_setlevel "
+                         "       and Trigger_state = 's' and trigger_sensor = %d ", akt_value, sensor);
+		do_sql(sql_stmt);	
 	} else { // falling edge !!
+	// case 3: akt_value < Trigger_setlevel < Trigger_resetlevel  ==> Set the trigger and start  
 		sprintf(sql_stmt,"insert into scheduled_jobs "
                          "select job from schedule where type = 'v' and trigger in ( "
-                         "select trigger from trigger where Trigger_setlevel < Trigger_resetlevel and %f < Trigger_setlevel and Trigger_state = 'r' and trigger_sensor = %d ) ", akt_value, sensor);
+                         "select trigger from trigger where %f < Trigger_setlevel and Trigger_setlevel < Trigger_resetlevel "
+						 "       and Trigger_state = 'r' and trigger_sensor = %d ) ", akt_value, sensor);
 		do_sql(sql_stmt);
-		sprintf(sql_stmt,"update trigger set Trigger_state = 's' where Trigger_setlevel < Trigger_resetlevel and %f < Trigger_setlevel and Trigger_state = 'r' and trigger_sensor = %d ", akt_value, sensor);
+		sprintf(sql_stmt,"update trigger set Trigger_state = 's' where %f < Trigger_setlevel and Trigger_setlevel < Trigger_resetlevel and Trigger_state = 'r' and trigger_sensor = %d ", akt_value, sensor);
 		do_sql(sql_stmt);
+	// case 4: akt_value < Trigger_resetlevel < Trigger_setlevel  ==> Reset the trigger	
+		sprintf(sql_stmt,"update trigger set Trigger_state = 'r' where %f < Trigger_resetlevel and Trigger_resetlevel < Trigger_setlevel "
+                         "       and Trigger_state = 's' and trigger_sensor = %d ", akt_value, sensor);
+		do_sql(sql_stmt);	
 	}
 }
 
