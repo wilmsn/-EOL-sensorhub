@@ -48,7 +48,7 @@ Added Trigger
 #define PIDFILE "/var/run/sensorhubd.pid"
 #define ERRSTR "ERROR: "
 #define DEBUGSTR "Debug: "
-#define MSG_KEY 4711
+/////#define MSG_KEY 4711
 
 //--------- End of global define -----------------
 
@@ -112,6 +112,7 @@ struct mesg_buf_t {
     char mesg[5];
 };
 mesg_buf_t mesg_buf;
+key_t key;
 
 int orderloopcount=0;
 int ordersqlexeccount=0;
@@ -330,7 +331,7 @@ bool del_jobbuffer_entry(uint16_t Job, uint16_t seq) {
 }
 
 void store_sensor_value(uint16_t job, uint16_t seq, float value) {
-	char sql_stmt[300];
+	char sql_stmt[500];
 	sprintf(sql_stmt,"insert or replace into sensordata (sensor_ID, utime, value) "
 					 "select ID,	strftime('%%s', datetime('now')), %f "
 					 " from JobStep "
@@ -354,7 +355,7 @@ void store_sensor_value(uint16_t job, uint16_t seq, float value) {
 	// Reset the trigger	
 	sprintf(sql_stmt,"update trigger set State = 'r' where "
 					 "  ( ( %f < Level_Reset and Level_Reset < Level_Set ) "
-                     " or ( %f > Level_Reset and Level_Reset > Level_Set ) ) and State = 's' and Sensor_ID = (select id from JobStep where Job_ID = %u and seq = %u and type=1) ", value, value, job, seq);
+                     " or ( %f > Level_Reset and Level_Reset > Level_Set ) ) and State = 's' and Sensor_ID = (select id from JobStep where Job_ID = %u and seq = %u and type=1) ", value, value, job, seq); 
 	do_sql(sql_stmt);	
 }
 
@@ -502,7 +503,8 @@ int main(int argc, char* argv[]) {
 	sprintf(debug, "sensorhub running with PID: %d\n", pid);
 	logmsg(1, debug);
     // set up message queue
-    if((msqid = msgget(MSG_KEY, 0666 | IPC_CREAT)) == -1) {
+	key = ftok("/var/www/index.html", 'S');
+    if((msqid = msgget(key, 0666 | IPC_CREAT)) == -1) {
         sprintf(debug, "Failed to open messagequeue");
 		logmsg(1, debug);
         exit(1);
@@ -530,8 +532,8 @@ int main(int argc, char* argv[]) {
 	long int akt_time;
     while(1) {
 		// check for external messages
-		if (msgrcv(msqid, &mesg_buf, sizeof(mesg_buf.mesg), 0, IPC_NOWAIT) > 0) {
-			sprintf(debug, "received Message: %s", mesg_buf.mesg);
+		if (msgrcv(msqid, &mesg_buf, sizeof(mesg_buf.mesg)-1, 0, IPC_NOWAIT) > 0) {
+			sprintf(debug, "MESG: received Message: Type: %ld Mesg: %s", mesg_buf.mtype, mesg_buf.mesg);
 			logmsg(7,debug);
 //			if ( mesg_buf.mesg == 1 ) {
 				ordersqlrefresh = true;

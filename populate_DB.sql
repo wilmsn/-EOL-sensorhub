@@ -147,10 +147,6 @@ CREATE VIEW Job2Jobbuffer
        SELECT a.job_ID, a.seq, b.node_ID, b.channel, a.type, a.value, a.sensor_id, a.priority 
          from jobstep a, sensor b
         where a.type = 1 and a.id = b.sensor_ID and a.job_ID in ( select job_ID from Scheduled_Jobs );
-CREATE VIEW Schedule_HR AS
-SELECT Schedule_ID, Job_Name,  strftime('%d.%m.%Y %H:%M',datetime(utime, 'unixepoch', 'localtime')) AS TimeStamp, Interval, Triggered_By, Trigger_ID
-FROM Schedule, Job
-WHERE schedule.job_id = job.job_id;
 CREATE VIEW Sensordata_HR AS
 SELECT sensordata.Sensor_ID, Sensor_Name, sensordata.Value,  strftime('%d.%m.%Y %H:%M',datetime(sensordata.utime, 'unixepoch', 'localtime')) AS TimeStamp,  strftime('%d.%m.%Y',datetime(sensordata.utime, 'unixepoch', 'localtime')) AS Date, sensordata.Utime
 FROM Sensor, sensordata
@@ -175,4 +171,9 @@ union all
 select a.Job_ID, a.Job_Name, b.Seq, 'Actor auf Sensorwert setzen' as Jobtyp, c.name, d.value 
 from Job a, Jobstep b, sensors_and_actors c, sensors_and_actors d
 where a.Job_ID = b.Job_ID and c.ID = b.ID and c.source = 'a' and d.ID = b.sensor_id and b.type = 3 and d.source = 's';
+CREATE VIEW Schedule_HR
+ AS 
+SELECT Schedule_ID, Job_Name,  strftime('%d.%m.%Y %H:%M:%S',datetime(utime, 'unixepoch', 'localtime')) AS TimeStamp, Interval, Triggered_By, Trigger_ID
+FROM Schedule, Job
+WHERE schedule.job_id = job.job_id;
 CREATE INDEX sensordata_utime on sensordata(utime);
