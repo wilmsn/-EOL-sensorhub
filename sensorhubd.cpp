@@ -42,8 +42,8 @@ Added Trigger
 
 
 */
-//#define DBFILE "/var/database/sensorhub_test.db"
 #define DBFILE "/var/database/sensorhub.db"
+////////#define DBFILE "/home/norbert/entw/sensorhub/sensorhub_neu.db"
 #define LOGFILE "/var/log/sensorhubd.log"
 #define PIDFILE "/var/run/sensorhubd.pid"
 #define ERRSTR "ERROR: "
@@ -301,13 +301,13 @@ void do_sql(char *mysql) {
 	if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, mysql);
 }
 
-bool del_messagebuffer_entry(uint16_t Job, uint16_t seq) {
+bool del_jobbuffer_entry(uint16_t Job, uint16_t seq) {
     sqlite3_stmt *mystmt;   
 	int rc;
 	char mysql_stmt[150];
 	char mydebug[100];
     int recordcount = 0;	
-	sprintf(mysql_stmt, "select count(*) from messagebuffer where Job = %u and seq = %u"
+	sprintf(mysql_stmt, "select count(*) from Jobbuffer where Job_ID = %u and Seq = %u"
 					, Job, seq );
 	rc = sqlite3_prepare(db, mysql_stmt, -1, &mystmt, 0 ); 
 	if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, mysql_stmt);
@@ -316,10 +316,10 @@ bool del_messagebuffer_entry(uint16_t Job, uint16_t seq) {
 	}
 	rc=sqlite3_finalize(mystmt);
 	if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, mysql_stmt);
-	sprintf(mydebug, "Info: del_messagebuffer_entry found %d records", recordcount);
+	sprintf(mydebug, "Info: del_jobbuffer_entry found %d records", recordcount);
     logmsg(8, mydebug);               
 	if (recordcount == 1) {
-		sprintf(mysql_stmt, " delete from messagebuffer where Job = %u and seq = %u "
+		sprintf(mysql_stmt, " delete from jobbuffer where Job_ID = %u and Seq = %u "
 						, Job, seq );
 		do_sql(mysql_stmt);
 		ordersqlrefresh=true;
@@ -329,91 +329,41 @@ bool del_messagebuffer_entry(uint16_t Job, uint16_t seq) {
 	}
 }
 
-void check_trigger(float last_value, float akt_value, int sensor) {
+void store_sensor_value(uint16_t job, uint16_t seq, float value) {
 	char sql_stmt[300];
-
-	if ( akt_value > last_value ) { // rising edge !!!
-	// case 1: akt_value > Trigger_setlevel > Trigger_resetlevel  ==> Set the trigger and start  
-		sprintf(sql_stmt,"insert into scheduled_jobs "
-                         "select job from schedule where type = 'v' and trigger in ( "
-                         "select trigger from trigger where %f > Trigger_setlevel and Trigger_setlevel > Trigger_resetlevel "
-						 "       and Trigger_state = 'r' and trigger_sensor = %d )", akt_value, sensor);
-		do_sql(sql_stmt);
-		sprintf(sql_stmt,"update trigger set Trigger_state = 's' where %f > Trigger_setlevel and Trigger_setlevel > Trigger_resetlevel "
-                         "       and Trigger_state = 'r' and trigger_sensor = %d ", akt_value, sensor);
-		do_sql(sql_stmt);
-	// case 2: akt_value > Trigger_resetlevel > Trigger_setlevel  ==> Reset the trigger	
-		sprintf(sql_stmt,"update trigger set Trigger_state = 'r' where %f > Trigger_resetlevel and Trigger_resetlevel > Trigger_setlevel "
-                         "       and Trigger_state = 's' and trigger_sensor = %d ", akt_value, sensor);
-		do_sql(sql_stmt);	
-	} else { // falling edge !!
-	// case 3: akt_value < Trigger_setlevel < Trigger_resetlevel  ==> Set the trigger and start  
-		sprintf(sql_stmt,"insert into scheduled_jobs "
-                         "select job from schedule where type = 'v' and trigger in ( "
-                         "select trigger from trigger where %f < Trigger_setlevel and Trigger_setlevel < Trigger_resetlevel "
-						 "       and Trigger_state = 'r' and trigger_sensor = %d ) ", akt_value, sensor);
-		do_sql(sql_stmt);
-		sprintf(sql_stmt,"update trigger set Trigger_state = 's' where %f < Trigger_setlevel and Trigger_setlevel < Trigger_resetlevel and Trigger_state = 'r' and trigger_sensor = %d ", akt_value, sensor);
-		do_sql(sql_stmt);
-	// case 4: akt_value < Trigger_resetlevel < Trigger_setlevel  ==> Reset the trigger	
-		sprintf(sql_stmt,"update trigger set Trigger_state = 'r' where %f < Trigger_resetlevel and Trigger_resetlevel < Trigger_setlevel "
-                         "       and Trigger_state = 's' and trigger_sensor = %d ", akt_value, sensor);
-		do_sql(sql_stmt);	
-	}
-}
-
-void store_sensor_value(uint16_t job, uint16_t seq, float akt_value) {
-    sqlite3_stmt *mystmt;   
-	char sql_stmt[300];
-	float last_value = -999;
-	int sensor = -999;
-
-	sprintf(sql_stmt,"insert or replace into sensordata (sensor, utime, value) "
-					"select id, "
-					"strftime('%%s', datetime('now','localtime')), %f "
-					" from job "
-					"where job = %u and seq = %u ", akt_value, job, seq);
+	sprintf(sql_stmt,"insert or replace into sensordata (sensor_ID, utime, value) "
+					 "select ID,	strftime('%%s', datetime('now')), %f "
+					 " from JobStep "
+					 "where Job_ID = %u and seq = %u ", value, job, seq);
 	do_sql(sql_stmt);
-	sprintf(sql_stmt,"select akt_value, sensor from sensor "
-					" where sensor = (select id from job where job = %u and seq = %u and type=1) "
-					, job, seq);
-	int rc = sqlite3_prepare(db, sql_stmt, -1, &mystmt, 0 ); 
-	if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, sql_stmt);
-	if (sqlite3_step(mystmt) == SQLITE_ROW) {
-		last_value = sqlite3_column_double (mystmt, 0);
-		sensor  = sqlite3_column_int (mystmt, 1);
-	}
-	rc=sqlite3_finalize(mystmt);
-	if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
-	sprintf(sql_stmt,"update sensor set last_value= %f, akt_value = %f, last_ts = datetime('now', 'localtime') "
-					" where sensor = (select id from job where job = %u and seq = %u and type=1) "
-					 , last_value, akt_value, job, seq);
+	sprintf(sql_stmt,"update sensor set value= %f, Utime = strftime('%%s', datetime('now')) "
+					" where sensor_id = (select id from JobStep where Job_ID = %u and seq = %u and type=1) "
+					 , value, job, seq);
 	do_sql(sql_stmt);
-	sprintf(sql_stmt,"update actor set sourcesensorvalue= %f "
-					" where source = 's' and value = (select id from job where job = %u and seq = %u and type=1) "
-					 , akt_value, job, seq);
+	// Set the trigger and start the corresponding job   
+	sprintf(sql_stmt,"insert into scheduled_jobs (Job_ID) "
+                     "select job_ID from schedule where Triggered_By = 'v' and Trigger_ID in ( "
+                     "select Trigger_ID from trigger where "
+					 "  ( ( %f < Level_Set and Level_Set < Level_Reset ) "
+					 " or ( %f > Level_Set and Level_Set > Level_Reset ) ) and State = 'r' and Sensor_ID = (select id from JobStep where Job_ID = %u and seq = %u and type=1) ) ", value, value, job, seq);
 	do_sql(sql_stmt);
-	check_trigger(last_value, akt_value, sensor);
+	sprintf(sql_stmt,"update trigger set State = 's' where "
+					 "  ( ( %f < Level_Set and Level_Set < Level_Reset ) "
+					 " or ( %f > Level_Set and Level_Set > Level_Reset ) ) and State = 'r' and Sensor_ID = (select id from JobStep where Job_ID = %u and seq = %u and type=1) ", value, value, job, seq);
+	do_sql(sql_stmt);
+	// Reset the trigger	
+	sprintf(sql_stmt,"update trigger set State = 'r' where "
+					 "  ( ( %f < Level_Reset and Level_Reset < Level_Set ) "
+                     " or ( %f > Level_Reset and Level_Reset > Level_Set ) ) and State = 's' and Sensor_ID = (select id from JobStep where Job_ID = %u and seq = %u and type=1) ", value, value, job, seq);
+	do_sql(sql_stmt);	
 }
 
 void store_actor_value(uint16_t job, uint16_t seq, float val) {
 	char sql_stmt[150];
-	sprintf(sql_stmt,"insert or replace into actordata(actor, value) values ((select ID from job where job=%u and seq=%u),%f)",job, seq, val);              
+	sprintf(sql_stmt,"update actor set Value = %f, Utime = strftime('%%s', datetime('now')) where Actor_ID = (select ID from JobStep where Job_ID = %u and Seq = %u)", val, job, seq);              
 	do_sql(sql_stmt);
 }
 
-/*
-int getparentnodeadr(int nodeadr) {
-	int parentnodeadr=-1;
-	if ( nodeadr > 0x7FFF ) parentnodeadr = 0;
-	else if ( nodeadr > 7*8*8*8 ) parentnodeadr = (nodeadr & 0x0FFF);
-	else if ( nodeadr > 7*8*8 ) parentnodeadr = (nodeadr & 0x01FF);
-	else if ( nodeadr > 7*8 ) parentnodeadr = (nodeadr & 0x003F);
-	else if ( nodeadr > 7 ) parentnodeadr = (nodeadr & 0x0007);
-	else parentnodeadr = 0;
-	return parentnodeadr;
-}
-*/
 void sighandler(int signal) {
     char debug[80];
 	sprintf(debug, "\nSIGTERM: Shutting down ...");
@@ -571,7 +521,7 @@ int main(int argc, char* argv[]) {
 	int rc = sqlite3_open(DBFILE, &db);
 	if (rc) { logmsg (1, err_opendb);  exit(99); }
     // Start Cleanup
-    sprintf (sql_stmt, "delete from messagebuffer "); 
+    sprintf (sql_stmt, "delete from JobBuffer "); 
 	logmsg(9, sql_stmt);        
     do_sql(sql_stmt);
     // End Cleanup	
@@ -601,7 +551,7 @@ int main(int argc, char* argv[]) {
 
 				case 1 ... 20: {
 				// Sensor 
-					if (del_messagebuffer_entry(payload.Job, payload.seq)) {
+					if (del_jobbuffer_entry(payload.Job, payload.seq)) {
 						store_sensor_value(payload.Job, payload.seq, payload.value); 
 						sprintf(debug, DEBUGSTR "Value of sensor %u on Node: %o is %f ", rxheader.type, sendernode, payload.value);
 						logmsg(7, debug);        
@@ -610,7 +560,7 @@ int main(int argc, char* argv[]) {
  
 				case 21 ... 99: {
 				// Actor 
-					if (del_messagebuffer_entry(payload.Job, payload.seq)) {
+					if (del_jobbuffer_entry(payload.Job, payload.seq)) {
 						store_actor_value(payload.Job, payload.seq, payload.value); 
 						sprintf(debug, DEBUGSTR "Value of sensor %u on Node: %o is %f ", rxheader.type, sendernode, payload.value);
 						logmsg(7, debug);        
@@ -618,45 +568,64 @@ int main(int argc, char* argv[]) {
 				break; }
 
 				case 101: {
-				// battery volatage
-					if (del_messagebuffer_entry(payload.Job, payload.seq)) {
+				// battery voltage
+					if (del_jobbuffer_entry(payload.Job, payload.seq)) {
 						store_sensor_value(payload.Job, payload.seq, payload.value); 
 						sprintf(debug, DEBUGSTR "Voltage of Node: %o is %f ", sendernode, payload.value);
 						logmsg(7, debug);        
-						sprintf(sql_stmt,"update node set Battery_act = %f where node = '0%o'", payload.value, sendernode);
+						sprintf(sql_stmt,"update node set U_Batt = %f where Node_ID = '0%o'", payload.value, sendernode);
 						do_sql(sql_stmt);
 					}
 				break; }
 				
-				case 111: {
-					sprintf(debug, DEBUGSTR "Node: %o: Sleeptime set to %f ", sendernode, payload.value);
+				case 111: { // Init Sleeptime 1
+					sprintf(debug, DEBUGSTR "Node: %o: Sleeptime1 set to %f ", sendernode, payload.value);
 					logmsg(7, debug);        
-					del_messagebuffer_entry(payload.Job, payload.seq);  
+					del_jobbuffer_entry(payload.Job, payload.seq);  
 				break; }
 				
-				case 112: {
-                    //					txheader.type=112;
-					bool radio_always_on = (payload.value >0.5);
+				case 112: { // Init Sleeptime 2
+					sprintf(debug, DEBUGSTR "Node: %o: Sleeptime2 set to %f ", sendernode, payload.value);
+					logmsg(7, debug);        
+					del_jobbuffer_entry(payload.Job, payload.seq);  
+				break; }
+
+				case 113: { // Init Sleeptime 3
+					sprintf(debug, DEBUGSTR "Node: %o: Sleeptime3 set to %f ", sendernode, payload.value);
+					logmsg(7, debug);        
+					del_jobbuffer_entry(payload.Job, payload.seq);  
+				break; }
+
+				case 114: { // Init Sleeptime 4
+					sprintf(debug, DEBUGSTR "Node: %o: Sleeptime4 set to %f ", sendernode, payload.value);
+					logmsg(7, debug);        
+					del_jobbuffer_entry(payload.Job, payload.seq);  
+				break; }
+
+				case 115: { // Init Radiobuffer
+                    bool radio_always_on = (payload.value >0.5);
 					if ( radio_always_on ) sprintf(debug, "---Debug: Radio allways on for Node: %o.", sendernode);
 					else sprintf(debug, "---Debug: Radio allways off for Node: %o.", sendernode);
 					logmsg(7, debug);        
-					del_messagebuffer_entry(payload.Job, payload.seq);  
+					del_jobbuffer_entry(payload.Job, payload.seq);  
 				break;  } 
 				
+				
+				// Geht das nicht auch ohne ??????????????????????????????????????????
 				case 118: {
 					sprintf(debug, DEBUGSTR "Node: %o Init finished.", sendernode);
 					logmsg(7, debug);        
-					del_messagebuffer_entry(payload.Job, payload.seq);  
+					del_jobbuffer_entry(payload.Job, payload.seq);  
 				break; }
 				
 				case 119: {
-				// Init via messagenuffer
+				// Init via JobBuffer
 				// we do only one init at one time
 					uint16_t sendernode = rxheader.from_node;
 					int init_seq = 10;
-					// check th messagebuffer if there is still an init job remaining
+					// check th jobbuffer if there is still an init job remaining
 					int init_waiting_jobs; 
-					sprintf(sql_stmt,"select count(*) from messagebuffer where channel in (111,112,113,114,115,116,117,118,119) and priority = 1 and node = '0%o' ", sendernode);
+					sprintf(sql_stmt,"select count(*) from JobBuffer where channel in (111,112,113,114,115,116,117,118,119) and priority = 1 and node = '0%o' ", sendernode);
 					rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
 					if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, sql_stmt);
 				    if (sqlite3_step(stmt) == SQLITE_ROW) {
@@ -667,29 +636,41 @@ int main(int argc, char* argv[]) {
 					rc=sqlite3_finalize(stmt);
 					if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
 					if ( init_waiting_jobs == 0) { 
-						sprintf (sql_stmt, "select sleeptime from node where node = '0%o' LIMIT 1 ",sendernode);
+						sprintf (sql_stmt, "select sleeptime1, sleeptime2, sleeptime3, sleeptime4, radiomode from node where node = '0%o' LIMIT 1 ",sendernode);
 						rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
 						if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, sql_stmt);
-						double sleeptime=60000; // set defaults
+						double sleeptime1=60000; // set defaults
+						double sleeptime2=60; // set defaults
+						double sleeptime3=60; // set defaults
+						double sleeptime4=60; // set defaults
 						double radiomode=0;
 						if (sqlite3_step(stmt) == SQLITE_ROW) {
-							sleeptime = sqlite3_column_double (stmt, 0);
+							sleeptime1 = sqlite3_column_double (stmt, 0);
+							sleeptime2 = sqlite3_column_double (stmt, 1);
+							sleeptime3 = sqlite3_column_double (stmt, 2);
+							sleeptime4 = sqlite3_column_double (stmt, 3);
 							// radiomode not implemented yet ==> still use default !!!!!
-							radiomode = sqlite3_column_double (stmt, 1);			
+							radiomode = sqlite3_column_double (stmt, 4);			
 						}
 						rc=sqlite3_finalize(stmt);
 						if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
-						// Channel 111 sets sleeptime
-						sprintf(sql_stmt,"insert into messagebuffer(job,seq,node,channel,value, priority) values (%d,1,'0%o',111,%f,1)"
-								,init_jobno, sendernode, sleeptime);
+						// Channel 111 sets sleeptime1 
+						sprintf(sql_stmt,"insert into JobBuffer(job_ID,Seq,Node_ID,Channel,Value, Type, Priority) values (%d,1,'0%o',111,%f,2,1)",init_jobno, sendernode, sleeptime1);
 						do_sql(sql_stmt);
-						// Channel 112 sets radiomode
-						sprintf(sql_stmt,"insert into messagebuffer(job,seq,node,channel,value, priority) values (%d,2,'0%o',112,%f,1)"
-								,init_jobno, sendernode, radiomode);
+						// Channel 112 sets sleeptime1 
+						sprintf(sql_stmt,"insert into JobBuffer(job_ID,Seq,Node_ID,Channel,Value, Type, Priority) values (%d,2,'0%o',112,%f,2,1)",init_jobno, sendernode, sleeptime2);
+						do_sql(sql_stmt);
+						// Channel 113 sets sleeptime1 
+						sprintf(sql_stmt,"insert into JobBuffer(job_ID,Seq,Node_ID,Channel,Value, Type, Priority) values (%d,3,'0%o',113,%f,2,1)",init_jobno, sendernode, sleeptime3);
+						do_sql(sql_stmt);
+						// Channel 114 sets sleeptime1 
+						sprintf(sql_stmt,"insert into JobBuffer(job_ID,Seq,Node_ID,Channel,Value, Type, Priority) values (%d,4,'0%o',114,%f,2,1)",init_jobno, sendernode, sleeptime4);
+						do_sql(sql_stmt);
+						// Channel 115 sets radiomode
+						sprintf(sql_stmt,"insert into JobBuffer(job_ID,Seq,Node_ID,Channel,Value, Type, Priority) values (%d,5,'0%o',115,%f,2,1)",init_jobno, sendernode, radiomode);
 						do_sql(sql_stmt);
 						// Channel 118 sets init is finished
-						sprintf(sql_stmt,"insert into messagebuffer(job,seq,node,channel,value, priority) values (%d,3,'0%o',118,0,1)"
-								,init_jobno, sendernode);
+						sprintf(sql_stmt,"insert into jobbuffer(job,seq,node,channel,value, priority) values (%d,8,'0%o',118,0,1)",init_jobno, sendernode);
 						do_sql(sql_stmt);
 						// Set the actors to its last known value
 						float last_val;
@@ -701,7 +682,7 @@ int main(int argc, char* argv[]) {
 							mychannel  = sqlite3_column_int (stmt, 0);
 							last_val = sqlite3_column_double (stmt, 1);
 							char sql_stmt1[300];
-							sprintf(sql_stmt1, "insert into messagebuffer(job, seq , node, channel, value, priority) values (%d, %d, '0%o', %d, %f, 5)"
+							sprintf(sql_stmt1, "insert into jobbuffer(job, seq , node, channel, value, priority) values (%d, %d, '0%o', %d, %f, 5)"
 											,init_jobno, init_seq, sendernode, mychannel, last_val);
 							do_sql(sql_stmt1);
 							init_seq++;
@@ -710,12 +691,13 @@ int main(int argc, char* argv[]) {
 						if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
 						init_jobno++;
 						if ( init_jobno > 99 ) init_jobno = 1;
-						orderloopcount=0;
 						ordersqlrefresh=true;
 					}
 				break; }
+				default: { // By default just delete this job from the jobbuffer
+					del_jobbuffer_entry(payload.Job, payload.seq);  				
+				}
 			}
-			orderloopcount=0;
 		} // network.available
 //
 // Dispatcher: Look if the is anything to schedule
@@ -725,61 +707,56 @@ int main(int argc, char* argv[]) {
 //
 // Cleanup old jobs that have not been executed during the last 10 minutes
 //
-			sprintf (sql_stmt, "delete from messagebuffer"
+			sprintf (sql_stmt, "delete from jobbuffer"
                  " where strftime('%%s','now') - utime > 600 " );
 			do_sql(sql_stmt);
 //
-// Case 1: Jobs that run  immeadeately (start = -1) and run only once (interval = -1)
+// Case 1: Jobs that run frequently - increment "start" by "interval" minutes 
 //
-			sprintf (sql_stmt, "insert into Scheduled_Jobs (job)"
-							   " select job from schedule "
-							   "  where start = '-1' and interval = -1 ");
+			sprintf (sql_stmt, "insert into Scheduled_Jobs (Job_ID)"
+							   " select Job_ID from schedule"
+							   "  where utime <= strftime('%%s','now') and interval > 0 ");
 			do_sql(sql_stmt);
-			sprintf (sql_stmt, "delete from schedule where start = '-1' and interval = -1 "); 
+			sprintf (sql_stmt, "update schedule set utime =  utime+(1+((strftime('%%s','now')-utime)/interval))*interval "
+							   "where utime < strftime('%%s','now') and interval > 0  "); 
+			do_sql(sql_stmt); 
+//
+// Case 2: Jobs that run  immeadeately (utime = 0) and run only once (interval = 0)
+//
+			sprintf (sql_stmt, "insert into Scheduled_Jobs (Job_ID)"
+							   " select Job_ID from schedule "
+							   "  where utime = 0 and interval = 0 ");
+			do_sql(sql_stmt);
+			sprintf (sql_stmt, "delete from schedule where utime = 0 and interval = 0 "); 
 			do_sql(sql_stmt);
 //
-// Case 2: Jobs that run at a scheduled time (start) and run only once (interval = -1)
+// Case 3: Jobs that run at a scheduled time (utime) and run only once (interval = 0)
 //
-			sprintf (sql_stmt, "insert into Scheduled_Jobs (job)"
-							   " select job from schedule "
-							   "  where datetime(start) <= datetime('now','localtime') and interval = -1 ");
+			sprintf (sql_stmt, "insert into Scheduled_Jobs (Job_ID)"
+							   " select Job_ID from schedule "
+							   "  where utime <= strftime('%%s','now') and interval = 0 ");
 			do_sql(sql_stmt);
-			sprintf (sql_stmt, "delete from schedule where start != '-1' and datetime(start) <= datetime('now','localtime') and interval = -1 "); 
+			sprintf (sql_stmt, "delete from schedule where utime <= strftime('%%s','now') and interval = 0 "); 
 			do_sql(sql_stmt);
 //
-// Case 3: Jobs that start immeadeately (start = -1) and run every <interval> minutes
+// Case 4: Jobs that start immeadeately (utime = 0) and run every <interval> minutes
 // 
-			sprintf (sql_stmt, "insert into Scheduled_Jobs (job)"
-							   " select job from schedule "
-							   " where start = '-1' and interval > 0 ");
+			sprintf (sql_stmt, "insert into Scheduled_Jobs (Job_ID)"
+							   " select Job_ID from schedule "
+							   " where utime = 0 and interval > 0 ");
 			do_sql(sql_stmt);
-			sprintf (sql_stmt, "update schedule set start = datetime('now', 'localtime', '+'||interval||' minutes') where start = '-1' and interval > 0 "); 
+			sprintf (sql_stmt, "update schedule set utime = strftime('%%s','now') + interval where utime = 0 and interval > 0 "); 
 			do_sql(sql_stmt);
-//
-// Case 4: Jobs that run frequently - increment "start" by "interval" minutes 
-//
-			sprintf (sql_stmt, "insert into Scheduled_Jobs (job)"
-							   " select job from schedule"
-							   "  where datetime(start) <= datetime('now','localtime') and interval > 0 ");
+// Put all Jobentries into jobbuffer
+			sprintf (sql_stmt, 	"insert into jobbuffer (Job_ID, Seq, Node_ID, Channel, Type, Value, Sensor_ID, Priority, Utime)"
+								" select Job_ID, Seq, Node_ID, Channel, Type, Value, Sensor_ID, Priority, strftime('%%s','now') from Job2Jobbuffer ");
 			do_sql(sql_stmt);
-			sprintf (sql_stmt, "update schedule set start = datetime(start, '+'||interval||' minutes') "
-							   "where datetime(start) <= datetime('now','localtime') and interval > 0 "); 
-			do_sql(sql_stmt);
-// Put all Jobentries into messagebuffer
-			sprintf (sql_stmt, 	"insert into messagebuffer (job,seq,node,channel,value,utime)"
-								" select job, seq, node, channel, value,strftime('%%s','now') from Scheduled_messages ");
-			do_sql(sql_stmt);
-// Put all Jobentries into messagebuffer
-//			sprintf (sql_stmt, "insert into messagebuffer (job,seq,node,channel,utime)"
-//							   "  select job, seq, node, channel, strftime('%%s','now') from Scheduled_messages ");
-//			do_sql(sql_stmt);
 // Delete all entries in Scheduled_Jobs, we dont need them any more
 			sprintf (sql_stmt, " delete from Scheduled_Jobs ");
 			do_sql(sql_stmt);
 //
 // End Dispatcher
 //
-//			orderloopcount=0;
 			ordersqlrefresh=true;
 		}
 //
@@ -788,13 +765,9 @@ int main(int argc, char* argv[]) {
 		akt_time=runtime(starttime);
 		if ( akt_time > sent_time + 499 ) {  // send every 500 milliseconds
 			sent_time=akt_time;
-//		if ( orderloopcount == 0 ) {
-			if ( ordersqlrefresh ) {
-//			if (ordersqlexeccount > 30 || ordersqlrefresh) {
+			if ( ordersqlrefresh ) { // if we got new jobs refresh the order array first
 				for (int i=1; i<7; i++) {
-					sprintf (sql_stmt, "select job, seq, node, channel, value from messagebuffer where substr(Node,length(node),1) = '%d' order by CAST(node as integer), priority, seq LIMIT 1 ",i);
-					//sprintf (sql_stmt, 	"select a.job, a.seq, a.node, a.channel, ifnull(b.sourcesensorvalue,0) from messagebuffer a left outer join actor b on a.node = b.node and a.channel = b.channel "
-					//					" where substr(a.Node,length(a.node),1) = '%d' order by CAST(a.node as integer), priority, seq LIMIT 1 ", i);
+					sprintf (sql_stmt, "select Job_ID, Seq, Node_ID, Channel, Value from jobbuffer2order where substr(Node_ID,length(Node_ID),1) = '%d' order by CAST(Node_ID as integer), priority, seq LIMIT 1 ",i);
 					logmsg(9,sql_stmt);					
 					rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
 					if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, sql_stmt);
@@ -810,11 +783,9 @@ int main(int argc, char* argv[]) {
 					}
 					rc=sqlite3_finalize(stmt);
 					if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
-//					ordersqlexeccount=0;
 					ordersqlrefresh=false;
 				}
 			}
-//			ordersqlexeccount++;
 			if ( (order[1].Job || order[2].Job || order[3].Job || order[4].Job || order[5].Job || order[6].Job)) {
 				int i=1;
 				while (i<7) {
@@ -838,14 +809,11 @@ int main(int argc, char* argv[]) {
 					i++; 
 				}
 			}
-		} // /orderloopcount
-//		orderloopcount++;
-//		if ( orderloopcount > 200 ) {  orderloopcount=0; }
+		} 
 		usleep(1000); 
 //
 //  end orderloop 
 //
-//		if (! (order[1].Job || order[2].Job || order[3].Job || order[4].Job || order[5].Job || order[6].Job)) usleep(100000);
 	} // while(1)
 	return 0;
 }
