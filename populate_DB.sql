@@ -1,64 +1,178 @@
+CREATE TABLE Actor
+(
+  Actor_ID int NOT NULL,
+  Actor_Name TEXT,
+  Add_Info TEXT,
+  Node_ID TEXT NOT NULL,
+  Channel int NOT NULL,
+  Value float,
+  Utime int,
+  CONSTRAINT Key2 PRIMARY KEY (Actor_ID),
+  CONSTRAINT Relationship5 FOREIGN KEY (Node_ID) REFERENCES Node (Node_ID),
+  CONSTRAINT Node_ID FOREIGN KEY (Node_ID) REFERENCES Node (Node_ID)
+);
+CREATE TABLE Battery
+(
+  Battery_ID int NOT NULL,
+  Battery_name TEXT,
+  U_Empty float,
+  U_Nominal float,
+  Battery_sel_txt TEXT,
+  CONSTRAINT Key3 PRIMARY KEY (Battery_ID)
+);
+CREATE TABLE Job
+(
+  Job_ID int NOT NULL,
+  Job_Name TEXT,
+  Add_Info TEXT,
+  CONSTRAINT Key6 PRIMARY KEY (Job_ID)
+);
+CREATE TABLE JobBuffer
+(
+  Job_ID int,
+  Seq int,
+  Node_ID TEXT,
+  Channel int,
+  Type int,
+  Value float,
+  Sensor_ID int,
+  Priority int,
+  Utime int
+);
+CREATE TABLE JobStep
+(
+  Job_ID int NOT NULL,
+  Seq int NOT NULL,
+  Add_Info TEXT,
+  Type int,
+  ID int,
+  Value float,
+  Sensor_ID int,
+  Priority int DEFAULT 9,
+  CONSTRAINT Key5 PRIMARY KEY (Seq,Job_ID),
+  CONSTRAINT Job_ID FOREIGN KEY (Job_ID) REFERENCES Job (Job_ID)
+);
 CREATE TABLE Node
-       (Node TEXT PRIMARY KEY, Battery_UN FLOAT, Battery_UE FLOAT, Location TEXT, Battery_act FLOAT, Nodename TEXT, sleeptime INT, radiomode INT, add_info text, bat_type INT, Battery_type INT);
+(
+  Node_ID TEXT NOT NULL,
+  Node_Name TEXT,
+  Add_Info TEXT,
+  U_Batt float,
+  Sleeptime1 int,
+  Sleeptime2 int,
+  Sleeptime3 int,
+  Sleeptime4 int,
+  Radiomode int,
+  Battery_ID int NOT NULL,
+  CONSTRAINT Key1 PRIMARY KEY (Node_ID),
+  CONSTRAINT Battery_ID FOREIGN KEY (Battery_ID) REFERENCES Battery (Battery_ID)
+);
+CREATE TABLE Schedule
+(
+  Schedule_ID int NOT NULL,
+  Job_ID int,
+  Triggered_By TEXT,
+  Utime int,
+  Interval int,
+  Trigger_ID int,
+  CONSTRAINT Key9 PRIMARY KEY (Schedule_ID),
+  CONSTRAINT Job_ID FOREIGN KEY (Job_ID) REFERENCES Job (Job_ID)
+);
 CREATE TABLE Scheduled_Jobs
-       (job INT);
+(
+  Job_ID int NOT NULL,
+  CONSTRAINT Key11 PRIMARY KEY (Job_ID),
+  CONSTRAINT Job_ID FOREIGN KEY (Job_ID) REFERENCES Job (Job_ID)
+);
 CREATE TABLE Sensor
-       (Sensor INT PRIMARY KEY, Sensorinfo TEXT, Node TEXT, Channel INT, Last_Value FLOAT, Last_TS TEXT, Akt_Value FLOAT,
-       FOREIGN KEY (Node) REFERENCES Node(Node) );
+(
+  Sensor_ID int NOT NULL,
+  Sensor_Name TEXT,
+  Add_Info TEXT,
+  Node_ID TEXT NOT NULL,
+  Channel int NOT NULL,
+  Value float,
+  Utime int,
+  CONSTRAINT Key2 PRIMARY KEY (Sensor_ID),
+  CONSTRAINT Relationship6 FOREIGN KEY (Node_ID) REFERENCES Node (Node_ID),
+  CONSTRAINT Node_ID FOREIGN KEY (Node_ID) REFERENCES Node (Node_ID)
+);
 CREATE TABLE Trigger
- (Trigger INT PRIMARY KEY, Triggername TEXT, Trigger_sensor INT, Trigger_setlevel FLOAT, Trigger_resetlevel FLOAT, Trigger_state TEXT);
-CREATE TABLE "actor"
-(Actor INT PRIMARY KEY, Actorinfo TEXT, Node TEXT, Channel INT, Source INT, Value FLOAT, sourcesensorvalue default 0,
-FOREIGN KEY (Node) REFERENCES Node(Node) );
-CREATE TABLE "actordata"
- (Actor INT, utime INT default ( strftime('%s','now')),Value float, PRIMARY KEY (Actor));
-CREATE TABLE battery (Battery_type INT, Battery_name TEXT, Battery_UE FLOAT, Battery_UN FLOAT, select_text text);
-CREATE TABLE job
-       (Job INT, Seq INT, type INT, ID INT, PRIMARY KEY ( job, seq ));
-CREATE TABLE jobchain(job INT,jobdesc TEXT);
-CREATE TABLE messagebuffer
-       ( job INT, seq INT, node TEXT, channel INT, value FLOAT, utime INT default ( strftime('%s','now')), priority INT default 9, FOREIGN KEY (Job) REFERENCES jobchain(JOB));
-CREATE TABLE schedule
-       (schedule INT PRIMARY KEY, job int, Start, Interval INT, type INT, trigger INT,
-       FOREIGN KEY (Job) REFERENCES jobchain(JOB));
-CREATE TABLE "sensordata"
-       (Sensor INT, utime int, Value float, PRIMARY KEY (utime, sensor));
-CREATE VIEW sensors_and_actors as
-       SELECT  's'||sensor as key, 1 as type, sensor as id, Sensorinfo as info, node, channel from Sensor
-       union all
-       SELECT 'a'||actor , 2, actor, Actorinfo, node, channel from Actor;
-CREATE VIEW sensordata1 as
-SELECT strftime('%Y',datetime(utime, 'unixepoch')) as year,
-       strftime('%m',datetime(utime, 'unixepoch')) as month,
-       strftime('%d',datetime(utime, 'unixepoch')) as day,
-       strftime('%H',datetime(utime, 'unixepoch')) as hour,
-       strftime('%M',datetime(utime, 'unixepoch')) as minute,
-       nodename, sensorinfo, value, a.sensor, utime
- from sensordata a, sensor b, node c
-where a.sensor = b.sensor and b.node = c.node
-order by utime asc;
-CREATE VIEW all_sensors as
-select sensor, sensorinfo, nodename, last_value, last_ts 
- from sensor b, node c
-where b.node = c.node
-order by nodename;
-CREATE VIEW messagebuffer_input as 
-select a.job, a.seq, a.node, a.channel, ifnull(b.sourcesensorvalue,0) as value from messagebuffer a left outer join actor b on a.node = b.node and a.channel = b.channel
- where b.source = 's'
+(
+  Trigger_ID int NOT NULL,
+  Trigger_Name TEXT,
+  Add_Info TEXT,
+  Level_Set float,
+  Level_Reset float,
+  State TEXT,
+  Sensor_ID int,
+  CONSTRAINT Key10 PRIMARY KEY (Trigger_ID),
+  CONSTRAINT Sensor_ID FOREIGN KEY (Sensor_ID) REFERENCES Sensor (Sensor_ID)
+);
+CREATE TABLE sensordata
+(
+  Sensor_ID int NOT NULL,
+  Utime int NOT NULL,
+  Value float,
+  CONSTRAINT Key4 PRIMARY KEY (Utime,Sensor_ID),
+  CONSTRAINT Sensor_ID FOREIGN KEY (Sensor_ID) REFERENCES Sensor (Sensor_ID)
+);
+CREATE TABLE test(utime,interval);
+CREATE VIEW Actor_HR AS
+SELECT Actor_ID, Actor_Name, Add_Info, Node_ID, Channel, Value,  strftime('%d.%m.%Y %H:%M',datetime(utime, 'unixepoch', 'localtime')) AS TimeStamp
+FROM Actor;
+CREATE VIEW Sensor_HR AS
+SELECT Sensor_ID, Sensor_Name, Add_Info, Node_ID, Channel, Value,  strftime('%d.%m.%Y %H:%M',datetime(utime, 'unixepoch', 'localtime')) AS TimeStamp
+FROM Sensor;
+CREATE VIEW jobbuffer2order
+ as 
+select a.job_id, a.seq, a.node_id, a.channel, b.value, a.priority  
+  from jobbuffer a, sensor b 
+ where a.type = 3 and a.sensor_id = b.sensor_id
+union all 
+select a.job_id, a.seq, a.node_id, a.channel, a.value, a.priority  
+  from jobbuffer a 
+ where a.type = 2
 union all
-select a.job, a.seq, a.node, a.channel, ifnull(b.value,0) as value from messagebuffer a left outer join actor b on a.node = b.node and a.channel = b.channel
- where b.source = 'v';
-CREATE VIEW Scheduled_messages as
-       SELECT a.job, a.seq, b.node, b.channel, 0 as value from job a, sensor b
-         where  a.type = 1 and a.id = b.sensor and a.job in ( select job from Scheduled_Jobs )
+select a.job_id, a.seq, a.node_id, a.channel, 0 as value, a.priority  
+  from jobbuffer a 
+ where a.type = 1;
+CREATE VIEW Job2Jobbuffer
+ AS 
+       SELECT a.job_ID, a.seq, b.node_ID, b.channel, a.type, a.value, a.sensor_id, a.priority 
+         from jobstep a, actor b
+        where (a.type = 2 or a.type=3) and a.id = b.actor_ID  
+          and a.job_ID in ( select job_ID from Scheduled_Jobs )
        union all
-       SELECT a.job, a.seq, b.node, b.channel, c.Last_Value from job a, actor b, sensor c
-         where  a.type = 2 and a.id = b.actor and a.job in ( select job from Scheduled_Jobs )
-                    and b.source ='s' and c.sensor = b.Value
-       union all
-       SELECT a.job, a.seq, b.node, b.channel, b.Value from job a, actor b
-         where  a.type = 2 and a.id = b.actor and a.job in ( select job from Scheduled_Jobs )
-                    and b.source ='v';
-CREATE INDEX sensordata_sensor on sensordata(sensor);
-CREATE INDEX sensordata_sensor_utime on sensordata(sensor,utime desc);
+       SELECT a.job_ID, a.seq, b.node_ID, b.channel, a.type, a.value, a.sensor_id, a.priority 
+         from jobstep a, sensor b
+        where a.type = 1 and a.id = b.sensor_ID and a.job_ID in ( select job_ID from Scheduled_Jobs );
+CREATE VIEW Schedule_HR AS
+SELECT Schedule_ID, Job_Name,  strftime('%d.%m.%Y %H:%M',datetime(utime, 'unixepoch', 'localtime')) AS TimeStamp, Interval, Triggered_By, Trigger_ID
+FROM Schedule, Job
+WHERE schedule.job_id = job.job_id;
+CREATE VIEW Sensordata_HR AS
+SELECT sensordata.Sensor_ID, Sensor_Name, sensordata.Value,  strftime('%d.%m.%Y %H:%M',datetime(sensordata.utime, 'unixepoch', 'localtime')) AS TimeStamp,  strftime('%d.%m.%Y',datetime(sensordata.utime, 'unixepoch', 'localtime')) AS Date, sensordata.Utime
+FROM Sensor, sensordata
+WHERE sensor.sensor_ID = sensordata.sensor_ID;
+CREATE VIEW Sensors_and_actors
+ AS 
+select sensor_id as id, sensor_name as name, add_info, node_id, channel, Value, Utime, 's' as source
+from sensor
+union all
+select actor_id as id, actor_name as name, add_info, node_id, channel, Value, Utime, 'a' as source
+from actor;
+CREATE VIEW Jobs4Joblist
+ AS
+select a.Job_ID, a.Job_Name, b.Seq, 'Sensor abfragen' as Jobtyp, c.name, 0 as value 
+from Job a, Jobstep b, sensors_and_actors c
+where a.Job_ID = b.Job_ID and c.ID = b.ID and b.type = 1 and c.source = 's'
+union all
+select a.Job_ID, a.Job_Name, b.Seq, 'Actor auf festen Wert setzen' as Jobtyp, c.name, b.value 
+from Job a, Jobstep b, sensors_and_actors c
+where a.Job_ID = b.Job_ID and c.ID = b.ID and b.type = 2 and c.source = 'a'
+union all
+select a.Job_ID, a.Job_Name, b.Seq, 'Actor auf Sensorwert setzen' as Jobtyp, c.name, d.value 
+from Job a, Jobstep b, sensors_and_actors c, sensors_and_actors d
+where a.Job_ID = b.Job_ID and c.ID = b.ID and c.source = 'a' and d.ID = b.sensor_id and b.type = 3 and d.source = 's';
 CREATE INDEX sensordata_utime on sensordata(utime);
