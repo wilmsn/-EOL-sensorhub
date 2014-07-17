@@ -37,7 +37,7 @@ CREATE TABLE JobBuffer
   Value float,
   Sensor_ID int,
   Priority int,
-  Utime int
+  Utime int DEFAULT (strftime('%s','now'))
 );
 CREATE TABLE JobStep
 (
@@ -74,7 +74,7 @@ CREATE TABLE Schedule
   Triggered_By TEXT,
   Utime int,
   Interval int,
-  Trigger_ID int,
+  Trigger_ID int, Trigger_state TEXT,
   CONSTRAINT Key9 PRIMARY KEY (Schedule_ID),
   CONSTRAINT Job_ID FOREIGN KEY (Job_ID) REFERENCES Job (Job_ID)
 );
@@ -108,6 +108,14 @@ CREATE TABLE Trigger
   Sensor_ID int,
   CONSTRAINT Key10 PRIMARY KEY (Trigger_ID),
   CONSTRAINT Sensor_ID FOREIGN KEY (Sensor_ID) REFERENCES Sensor (Sensor_ID)
+);
+CREATE TABLE Triggerdata
+(
+  Trigger_ID int NOT NULL,
+  utime int NOT NULL DEFAULT (strftime('%s','now')),
+  state TEXT,
+  CONSTRAINT Key13 PRIMARY KEY (Trigger_ID,utime),
+  CONSTRAINT Relationship7 FOREIGN KEY (Trigger_ID) REFERENCES Trigger (Trigger_ID)
 );
 CREATE TABLE sensordata
 (
@@ -176,4 +184,13 @@ CREATE VIEW Schedule_HR
 SELECT Schedule_ID, Job_Name,  strftime('%d.%m.%Y %H:%M:%S',datetime(utime, 'unixepoch', 'localtime')) AS TimeStamp, Interval, Triggered_By, Trigger_ID
 FROM Schedule, Job
 WHERE schedule.job_id = job.job_id;
+CREATE VIEW triggerdata_HR
+ AS
+SELECT  triggerdata.trigger_ID, 
+        trigger_Name, 
+        triggerdata.state,
+        strftime('%d.%m.%Y %H:%M',datetime(triggerdata.utime, 'unixepoch', 'localtime')) AS TimeStamp,
+        strftime('%d.%m.%Y',date(triggerdata.utime, 'unixepoch', 'localtime')) AS Date, triggerdata.Utime
+FROM trigger, triggerdata
+WHERE trigger.trigger_ID = triggerdata.trigger_ID;
 CREATE INDEX sensordata_utime on sensordata(utime);

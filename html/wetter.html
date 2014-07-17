@@ -1,12 +1,18 @@
+<?php
+$DB_FILENAME="/var/database/sensorhub.db";
+$db = new SQLite3($DB_FILENAME);
+
+?>
+
 <head><title>Wetterstation Nottuln</title></head>
 <META HTTP-EQUIV=Refresh Content="300; URL=/wetter.html">
-<body bgcolor="#F0F0F0">
+<body bgcolor="#cccccc">
 <style type="text/css">
 <!--
 
 #seitenbereich {
   width: 380px;
-  background-color:#CFCFCF;
+  background-color:#cccccc;
 }
  -->
 </style>
@@ -23,16 +29,54 @@ Die aktuellen Werte aus Nottuln: <br>
 Kostenlose, frei konfigurierbare Homepage-Uhr von www.schnelle-online.info/Homepage/Tools.html. Ohne Gewähr, ohne Haftung.
 Nutzungbedingung: Dieser Kommentar und der Link unten dürfen nicht entfernt oder (nofollow) modifiziert werden.
 -->
-<a style="text-decoration:none;border-style:none;color:black;" target="_blank" href="http://www.schnelle-online.info/Atomuhr-Uhrzeit.html" id="soitime121693632552">Uhrzeit</a><br/><a style="text-decoration:none;border-style:none;color:black;" target="_blank" href="http://www.schnelle-online.info/Kalender.html" id="soidate121693632552">Kalender</a>
+<a style="text-decoration:none;border-style:none;color:black;" target="_blank" href="http://www.schnelle-online.info/Atomuhr-Uhrzeit.html" id="soitime121693632552">Uhrzeit</a><br/>
+<a style="text-decoration:none;border-style:none;color:black;" target="_blank" href="http://www.schnelle-online.info/Kalender.html" id="soidate121693632552">Kalender</a>
 <script type="text/javascript">
-SOI = (typeof(SOI) != 'undefined') ? SOI : {};(SOI.ac21fs = SOI.ac21fs || []).push(function() {
+SOI = (typeof(SOI) != 'undefined') ? SOI : {};
+(SOI.ac21fs = SOI.ac21fs || []).push(function() {
 (new SOI.DateTimeService("121693632552", "DE")).appendTime(" Uhr").setWeekdayMode(1).setMonthMode(1).start();});
-(function() {if (typeof(SOI.scrAc21) == "undefined") { SOI.scrAc21=document.createElement('script');SOI.scrAc21.type='text/javascript'; SOI.scrAc21.async=true;SOI.scrAc21.src=((document.location.protocol == 'https:') ? 'https://' : 'http://') + 'homepage-tools.schnelle-online.info/Homepage/atomicclock2_1.js';var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(SOI.scrAc21, s);}})();
+(function() {
+  if (typeof(SOI.scrAc21) == "undefined") {
+    SOI.scrAc21=document.createElement('script');
+    SOI.scrAc21.type='text/javascript';
+    SOI.scrAc21.async=true;
+    SOI.scrAc21.src=((document.location.protocol == 'https:') ? 'https://' : 'http://') + 'homepage-tools.schnelle-online.info/Homepage/atomicclock2_1.js';
+    var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(SOI.scrAc21, s);
+  }
+})();
 </script>
 </h2>
-<img src="/cgi-bin/ws_akt.pl?sensor=1&unit=C&titel=Temperatur&dezimal=1">
-<img src="/cgi-bin/ws_akt.pl?sensor=2&unit=hPa&titel=Luftdruck&dezimal=0">
-<img src="/cgi-bin/ws_akt.pl?sensor=3&unit=V&titel=Batterie&dezimal=2"><br>
-<img src="/cgi-bin/ws_24h.pl?sensor1=1&sensor2=2&reihe1=Temperatur&reihe2=Luftdruck">
+<table><tr><td>
+<table style="width:100px; height:50px; border:1px solid #000;"><tr><td><center>Temperatur:<br><b>
+<?php
+  $results = $db->query("SELECT value FROM sensor where sensor_id = 1 LIMIT 1");
+  $row = $results->fetchArray();
+  echo number_format($row[0],1, ",", ".");
+?>
+ C</b></center></td></tr></table>
+</td><td>
+<table style="width:100px; height:50px; border:1px solid #000;"><tr><td><center>Luftdruck:<br><b>
+<?php
+  $results = $db->query("SELECT value FROM sensor where sensor_id = 2 LIMIT 1");
+  $row = $results->fetchArray();
+  echo number_format($row[0],0, ",", ".");
+?>
+ hPa</b></center></td></tr></table>
+</td><td>
+<table style="width:100px; height:50px; border:1px solid #000;"><tr><td><center>Batterie:<br><b>
+<?php
+  $results = $db->query("SELECT value FROM sensor where sensor_id = 3 LIMIT 1");
+  $row = $results->fetchArray();
+  echo number_format($row[0],2, ",", ".");
+?>
+ V</b></center></td></tr></table>
+</td></tr></table>
+<a target="_blank" href="/wetter1.html">
+<img src="/png/wetter_diagramm24h.png">
+</a>
 </center>
 </div>
+<?php
+$db->close();
+?>
+

@@ -1,7 +1,7 @@
 // Define a valid radiochannel here
 #define RADIOCHANNEL 90
 // This node: Use octal numbers starting with "0": "041" is child 4 of node 1
-#define NODE 015
+#define NODE 05
 // The CE Pin of the Radio module
 #define RADIO_CE_PIN 10
 // The CS Pin of the Radio module
@@ -38,17 +38,25 @@ struct payload_t
 
 payload_t payload;
 
-enum radiomode_t { radio_sleep, radio_listen } radiomode;
+enum radiomode_t { radio_sleep, radio_listen } radiomode = radio_sleep;
 
 RF24NetworkHeader rxheader;
 RF24NetworkHeader txheader(0);
-
-unsigned int sleeptime = 0;
-int init_loop_counter = 0;
+// all sleeptime* values in seconds 
+// Time for the fist sleep after an activity of this node
+float sleeptime1 = 60;
+// Time for the 2. to N. sleeploop
+float sleeptime2 = 10;
+// Time to sleep after wakeup with radio on
+float sleeptime3 = 1;
+// Time to keep the network up if it was busy
+float sleeptime4 = 5;
+unsigned int init_loop_counter = 0;
+unsigned int loop_counter = 0;
 boolean init_finished = false;
 boolean init_transmit = true;
 boolean network_busy = false;
-unsigned int stayawakeloopcount = 0;
+float networkuptime = 0;
 
 // Usage: radio(CE_pin, CS_pin)
 RF24 radio(RADIO_CE_PIN,RADIO_CSN_PIN);
@@ -57,63 +65,14 @@ RF24 radio(RADIO_CE_PIN,RADIO_CSN_PIN);
 RF24Network network(radio);
 
 void action_loop(void) {
+    txheader.type=rxheader.type;
     switch (rxheader.type) {
       case 1:
-        txheader.type=1;
-        //****
-        // insert here: payload.value=[result from sensor]
-        network.write(txheader,&payload,sizeof(payload));
-       break;
-      case 2:
-        txheader.type=2;
-        //****
-        // insert here: payload.value=[result from sensor]
-        network.write(txheader,&payload,sizeof(payload));
-       break;
-      case 3:
-        txheader.type=3;
-        //****
-        // insert here: payload.value=[result from sensor]
-        network.write(txheader,&payload,sizeof(payload));
-       break;
-      case 4:
-        txheader.type=4;
-        //****
-        // insert here: payload.value=[result from sensor]
-        network.write(txheader,&payload,sizeof(payload));
-       break;
-      case 5:
-        txheader.type=5;
-        //****
-        // insert here: payload.value=[result from sensor]
-        network.write(txheader,&payload,sizeof(payload));
-       break;
-      case 6:
-        txheader.type=6;
-        //****
-        // insert here: payload.value=[result from sensor]
-        network.write(txheader,&payload,sizeof(payload));
-       break;
-      case 7:
-        txheader.type=7;
-        //****
-        // insert here: payload.value=[result from sensor]
-        network.write(txheader,&payload,sizeof(payload));
-       break;
-      case 8:
-        txheader.type=8;
-        //****
-        // insert here: payload.value=[result from sensor]
-        network.write(txheader,&payload,sizeof(payload));
-       break;
-      case 9:
-        txheader.type=9;
         //****
         // insert here: payload.value=[result from sensor]
         network.write(txheader,&payload,sizeof(payload));
        break;
       case 21:
-        txheader.type=21;
         //****
         // insert here: action = payload.value
         if ( payload.value > 0.5 ) {
@@ -126,31 +85,40 @@ void action_loop(void) {
       case 101:
       // battery voltage
         payload.value=read_battery_voltage();
-        txheader.type=101;
         network.write(txheader,&payload,sizeof(payload));
         break;
       case 111:
-      // sleeptimer
-        if (payload.value > 0) sleeptime=payload.value;
-        radiomode=radio_sleep;
-        txheader.type=111;
+      // sleeptimer1
+        sleeptime1=payload.value;
         network.write(txheader,&payload,sizeof(payload));
         break;
       case 112:
+      // sleeptimer2
+        sleeptime2=payload.value;
+        network.write(txheader,&payload,sizeof(payload));
+        break;
+      case 113:
+      // sleeptimer3
+        sleeptime3=payload.value;
+        network.write(txheader,&payload,sizeof(payload));
+        break;
+      case 114:
+      // sleeptimer4
+        sleeptime4=payload.value;
+        network.write(txheader,&payload,sizeof(payload));
+        break;
+      case 115:
       // radio on (=1) or off (=0) when sleep
-        txheader.type=112;
         if ( payload.value > 0.5) radiomode=radio_listen; else radiomode=radio_sleep;
         network.write(txheader,&payload,sizeof(payload));
         break;
       case 118:
-      // just in case that there are still some messages inside the network ...
-        init_finished=true;
-        txheader.type=118;
+      // init_finished (=1)
+        init_finished = ( payload.value > 0.5);
         network.write(txheader,&payload,sizeof(payload));
         break;
       default:
       // Default: just send the paket back  
-        txheader=rxheader;
         network.write(txheader,&payload,sizeof(payload));
     }
 }
@@ -197,6 +165,7 @@ void setup(void) {
     //just in case of initialisation is interrupted
     if (init_loop_counter < -1000) init_transmit=true;
   }
+  delay(500);
   digitalWrite(STATUSLED,STATUSLED_OFF);
   network_busy=true;
 }
@@ -218,13 +187,12 @@ void loop(void) {
   digitalWrite(STATUSLED,STATUSLED_ON);
   if (network.update()) {
     network_busy = true;
-    stayawakeloopcount=0;
+    networkuptime = 0;
   }
   if ( ! network_busy ) {
   //*****************
   // Put anything you want to run frequently here
   //*****************
-  
   
   //#################
   // END run frequently
@@ -232,22 +200,24 @@ void loop(void) {
   }
   if ( network.available() ) {
     network_busy = true;
-    stayawakeloopcount=0;
+    networkuptime = 0;
+    loop_counter = 0;
     network.read(rxheader,&payload,sizeof(payload));
     action_loop();
   }
   digitalWrite(STATUSLED,STATUSLED_OFF);
-  if (stayawakeloopcount > STAYAWAKEDEFAULT) {
+  if (networkuptime > sleeptime4) {
     network_busy=false;
-    stayawakeloopcount=0;
   }
   if ( network_busy ) {
     sleep4ms(250);
-    stayawakeloopcount++;
+    networkuptime=networkuptime+0.25;
   } else {
     if ( radiomode == radio_sleep ) radio.powerDown();
-    sleep4ms(sleeptime*1000);
+    if (loop_counter == 0) sleep4ms((unsigned int)(sleeptime1*1000)); else sleep4ms((unsigned int)(sleeptime2*1000));
     if ( radiomode == radio_sleep ) radio.powerUp();
-    sleep4ms(1000);
+    sleep4ms((unsigned int)(sleeptime3*1000));
+    loop_counter++;
+    if (loop_counter > 60000) loop_counter=1;
   }
 }
