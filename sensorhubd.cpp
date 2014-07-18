@@ -358,7 +358,7 @@ void store_sensor_value(uint16_t job, uint16_t seq, float value) {
 	do_sql(sql_stmt);
 	// Reset the trigger and start the corresponding job   
 	sprintf(sql_stmt,"insert into scheduled_jobs (Job_ID) "
-                     "select job_ID from schedule where Triggered_By = 'r' and trigger_state = 'r'  and Trigger_ID in ( "
+                     "select job_ID from schedule where Triggered_By = 'v' and trigger_state = 'r'  and Trigger_ID in ( "
                      "select Trigger_ID from trigger where "
 					 "  ( ( %f < Level_Reset and Level_Reset < Level_Set ) "
                      " or ( %f > Level_Reset and Level_Reset > Level_Set ) ) and State = 's' and Sensor_ID = (select id from JobStep where Job_ID = %u and seq = %u and type=1) ) ", value, value, job, seq); 
