@@ -6,7 +6,7 @@ V3: Upgrade to Lowpower Library; display of a battery symbol
 // Define a valid radiochannel here
 #define RADIOCHANNEL 90
 // This node: Use octal numbers starting with "0": "041" is child 4 of node 1
-#define NODE 04 
+#define NODE 03
 // The CE Pin of the Radio module
 #define RADIO_CE_PIN 10
 // The CS Pin of the Radio module
@@ -103,6 +103,7 @@ boolean init_finished = false;
 boolean init_transmit = true;
 boolean network_busy = false;
 boolean display_down = false;
+boolean low_voltage_flag = false;
 float networkuptime = 0;
 float temp;
 int free_loop_counter = 0;
@@ -120,15 +121,17 @@ RF24Network network(radio);
 
 void display_sleep(boolean dmode) {
   display_down = dmode;
-  if ( dmode ) { // Display go to sleep
-    myGLCD.enableSleep(); 
-  } else {
-    myGLCD.disableSleep(); 
-      get_temp();
-      print_field(field1_val,1);
-      print_field(field2_val,2);
-      print_field(field3_val,3);
-      print_field(field4_val,4);
+  if ( ! low_voltage_flag ) {
+    if ( dmode ) { // Display go to sleep
+      myGLCD.enableSleep(); 
+    } else {
+      myGLCD.disableSleep(); 
+        get_temp();
+        print_field(field1_val,1);
+        print_field(field2_val,2);
+        print_field(field3_val,3);
+        print_field(field4_val,4);
+    }
   }  
 }
 
@@ -167,16 +170,16 @@ void action_loop(void) {
        break;
       case 31:
         // Displaylight ON <-> OFF
-        if (payload.value > 0.5) {
-          digitalWrite(STATUSLED,STATUSLED_ON); 
-        } else {
+        if (payload.value < 0.5) {
           digitalWrite(STATUSLED,STATUSLED_OFF); 
+        } else  {
+          digitalWrite(STATUSLED,STATUSLED_ON);
         }
         network.write(txheader,&payload,sizeof(payload));
        break;
       case 41:
         // Display Sleepmode ON <-> OFF
-        display_sleep(payload.value > 0.5);
+        display_sleep(payload.value < 0.5);
         network.write(txheader,&payload,sizeof(payload));
        break;
       case 101:  
@@ -245,6 +248,7 @@ void setup(void) {
   //####
   network.begin(RADIOCHANNEL, NODE);
   radio.setDataRate(RF24_250KBPS);
+  radio.setRetries(15,2); // delay 4000us, 2 retries
   // initialisation beginns
   while ( ! init_finished ) {
     if ( init_transmit && init_loop_counter < 1 ) {
@@ -322,7 +326,7 @@ void draw_temp(float t) {
 }
 
 float read_battery_voltage(void) {
-  float vmess;
+  float vmess, voltage;
   digitalWrite(VMESS_OUT, HIGH);
   sleep4ms(250);
   vmess=analogRead(VMESS_IN);
@@ -331,7 +335,19 @@ float read_battery_voltage(void) {
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   digitalWrite(VMESS_OUT, LOW);
-  return vmess / VOLTAGEDIVIDER;
+  voltage = vmess / VOLTAGEDIVIDER;
+  if ( voltage < U0 ) {
+    if ( ! low_voltage_flag ) {
+      low_voltage_flag = true;
+      display_sleep(true);
+    }
+  } else {
+    if ( low_voltage_flag ) {
+      low_voltage_flag = false;
+      display_sleep(false);
+    }
+  }
+  return voltage;  
 }
 
 float get_temp(void) {
@@ -491,17 +507,6 @@ void draw_wait(byte x, byte y, int waitcount ) {
 }
 
 void loop(void) {
-  if ( cur_voltage < U0 ) {
-    if ( ! display_down ) {
-      myGLCD.enableSleep(); 
-      display_down = true;
-    }
-  } else {
-    if ( display_down ) {
-      myGLCD.disableSleep(); 
-      display_down = false;
-    }
-  }      
   if (network.update()) {
     network_busy = true;
     networkuptime = 0;
@@ -530,9 +535,9 @@ void loop(void) {
       wipe_antenna(ANT_X0, ANT_Y0);
     }
     if (loop_counter == 0) sleep4ms((unsigned int)(sleeptime1*1000)); else sleep4ms((unsigned int)(sleeptime2*1000));
-    if ( radiomode == radio_sleep ) {
+//    if ( radiomode == radio_sleep ) {
       radio.powerUp();
-    }
+//    }
     draw_antenna(ANT_X0, ANT_Y0);
     sleep4ms((unsigned int)(sleeptime3*1000));
     loop_counter++;
