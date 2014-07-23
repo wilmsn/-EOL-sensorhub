@@ -302,7 +302,7 @@ void do_sql(char *mysql) {
 	if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, mysql);
 }
 
-bool del_jobbuffer_entry(uint16_t Job, uint16_t seq) {
+bool is_jobbuffer_entry(uint16_t Job, uint16_t seq) {
     sqlite3_stmt *mystmt;   
 	int rc;
 	char mysql_stmt[150];
@@ -320,15 +320,20 @@ bool del_jobbuffer_entry(uint16_t Job, uint16_t seq) {
 	sprintf(mydebug, "Info: del_jobbuffer_entry found %d records", recordcount);
     logmsg(8, mydebug);               
 	if (recordcount > 0) {
-		sprintf(mysql_stmt, " delete from jobbuffer where Job_ID = %u and Seq = %u "
-						, Job, seq );
-		do_sql(mysql_stmt);
-		ordersqlrefresh=true;
 		return true;
 	} else {
 		return false;
 	}
 }
+
+void del_jobbuffer_entry(uint16_t Job, uint16_t seq) {
+	char mysql_stmt[150];
+	sprintf(mysql_stmt, " delete from jobbuffer where Job_ID = %u and Seq = %u "
+					, Job, seq );
+	do_sql(mysql_stmt);
+	ordersqlrefresh=true;
+}
+
 
 void store_sensor_value(uint16_t job, uint16_t seq, float value) {
 	char sql_stmt[500];
@@ -358,7 +363,7 @@ void store_sensor_value(uint16_t job, uint16_t seq, float value) {
 	do_sql(sql_stmt);
 	// Reset the trigger and start the corresponding job   
 	sprintf(sql_stmt,"insert into scheduled_jobs (Job_ID) "
-                     "select job_ID from schedule where Triggered_By = 'r' and trigger_state = 'r'  and Trigger_ID in ( "
+                     "select job_ID from schedule where Triggered_By = 'v' and trigger_state = 'r'  and Trigger_ID in ( "
                      "select Trigger_ID from trigger where "
 					 "  ( ( %f < Level_Reset and Level_Reset < Level_Set ) "
                      " or ( %f > Level_Reset and Level_Reset > Level_Set ) ) and State = 's' and Sensor_ID = (select id from JobStep where Job_ID = %u and seq = %u and type=1) ) ", value, value, job, seq); 
@@ -374,8 +379,8 @@ void store_sensor_value(uint16_t job, uint16_t seq, float value) {
 }
 
 void store_actor_value(uint16_t job, uint16_t seq, float val) {
-	char sql_stmt[150];
-	sprintf(sql_stmt,"update actor set Value = %f, Utime = strftime('%%s', datetime('now')) where Actor_ID = (select ID from JobStep where Job_ID = %u and Seq = %u)", val, job, seq);              
+	char sql_stmt[250];
+	sprintf(sql_stmt,"update actor set Value = %f, Utime = strftime('%%s', datetime('now')) where actor_id = (select actor_ID from JobBuffer a, actor b where a.node_id = b.node_id and a.channel=b.channel and a.Job_ID = %u and a.Seq = %u)", val, job, seq);              
 	do_sql(sql_stmt);
 }
 
@@ -567,30 +572,33 @@ int main(int argc, char* argv[]) {
 
 				case 1 ... 20: {
 				// Sensor 
-					if (del_jobbuffer_entry(payload.Job, payload.seq)) {
+					if (is_jobbuffer_entry(payload.Job, payload.seq)) {
 						store_sensor_value(payload.Job, payload.seq, payload.value); 
 						sprintf(debug, DEBUGSTR "Value of sensor %u on Node: %o is %f ", rxheader.type, sendernode, payload.value);
 						logmsg(7, debug);        
+						del_jobbuffer_entry(payload.Job, payload.seq);
 					}
 				break; }
  
 				case 21 ... 99: {
 				// Actor 
-					if (del_jobbuffer_entry(payload.Job, payload.seq)) {
+					if (is_jobbuffer_entry(payload.Job, payload.seq)) {
 						store_actor_value(payload.Job, payload.seq, payload.value); 
 						sprintf(debug, DEBUGSTR "Value of sensor %u on Node: %o is %f ", rxheader.type, sendernode, payload.value);
 						logmsg(7, debug);        
+						del_jobbuffer_entry(payload.Job, payload.seq);
 					}
 				break; }
 
 				case 101: {
 				// battery voltage
-					if (del_jobbuffer_entry(payload.Job, payload.seq)) {
+					if (is_jobbuffer_entry(payload.Job, payload.seq)) {
 						store_sensor_value(payload.Job, payload.seq, payload.value); 
 						sprintf(debug, DEBUGSTR "Voltage of Node: %o is %f ", sendernode, payload.value);
 						logmsg(7, debug);        
 						sprintf(sql_stmt,"update node set U_Batt = %f where Node_ID = '0%o'", payload.value, sendernode);
 						do_sql(sql_stmt);
+						del_jobbuffer_entry(payload.Job, payload.seq);
 					}
 				break; }
 				

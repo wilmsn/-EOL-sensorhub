@@ -125,7 +125,14 @@ CREATE TABLE sensordata
   CONSTRAINT Key4 PRIMARY KEY (Utime,Sensor_ID),
   CONSTRAINT Sensor_ID FOREIGN KEY (Sensor_ID) REFERENCES Sensor (Sensor_ID)
 );
+CREATE TABLE setactor_ext
+(
+  Node_ID TEXT,
+  Channel int,
+  Value float
+);
 CREATE TABLE test(utime,interval);
+CREATE TABLE test_trigger(test int, val int);
 CREATE VIEW Actor_HR AS
 SELECT Actor_ID, Actor_Name, Add_Info, Node_ID, Channel, Value,  strftime('%d.%m.%Y %H:%M',datetime(utime, 'unixepoch', 'localtime')) AS TimeStamp
 FROM Actor;
@@ -193,4 +200,14 @@ SELECT  triggerdata.trigger_ID,
         strftime('%d.%m.%Y',date(triggerdata.utime, 'unixepoch', 'localtime')) AS Date, triggerdata.Utime
 FROM trigger, triggerdata
 WHERE trigger.trigger_ID = triggerdata.trigger_ID;
+CREATE VIEW Job_HR AS
+SELECT Job_Name, Job.Add_Info, JobStep.Job_ID, Seq, Type, JobStep.Add_Info, Value, ID, Sensor_ID, Priority
+FROM Job, JobStep
+WHERE job.job_id = jobstep.job_id;
 CREATE INDEX sensordata_utime on sensordata(utime);
+CREATE TRIGGER setactor_trigger after insert on setactor_ext
+begin
+insert into jobbuffer(job_id,seq,node_id,channel,type,value,Sensor_ID,Priority) 
+select (select ifnull(max(job_id),101)+1 from jobbuffer where job_id >100 and job_id < 1000),1, node_id, channel, 2, value,0,5 from  setactor_ext;
+delete from  setactor_ext;
+end;

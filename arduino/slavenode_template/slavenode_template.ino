@@ -138,8 +138,7 @@ void setup(void) {
   //####
   radio.begin();
   radio.setPALevel(RF24_PA_MAX);
-  radio.setAutoAck(true);
-  radio.setRetries(2,15);
+  radio.setRetries(15,2);
   network.begin(RADIOCHANNEL, NODE);
   radio.setDataRate(RF24_250KBPS);
   digitalWrite(STATUSLED,STATUSLED_ON);
