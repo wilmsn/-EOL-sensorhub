@@ -40,5 +40,5 @@ install:
 
 # Install a new empty database
 installDB:
-	cp sensorhub.db /var/database
+	./install_database.sh	
 
