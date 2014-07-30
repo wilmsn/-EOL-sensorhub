@@ -1,7 +1,7 @@
 // Define a valid radiochannel here
 #define RADIOCHANNEL 90
 // This node: Use octal numbers starting with "0": "041" is child 4 of node 1
-#define NODE 05
+#define NODE 023
 // The CE Pin of the Radio module
 #define RADIO_CE_PIN 10
 // The CS Pin of the Radio module
@@ -51,6 +51,8 @@ float sleeptime2 = 10;
 float sleeptime3 = 1;
 // Time to keep the network up if it was busy
 float sleeptime4 = 5;
+// The Voltagedivider - if you dont set it via channel 116 you will get the output of ADC
+float voltagedivider = 1;
 unsigned int init_loop_counter = 0;
 unsigned int loop_counter = 0;
 boolean init_finished = false;
@@ -70,57 +72,53 @@ void action_loop(void) {
       case 1:
         //****
         // insert here: payload.value=[result from sensor]
-        network.write(txheader,&payload,sizeof(payload));
        break;
       case 21:
         //****
         // insert here: action = payload.value
+        // Switch the StatusLED ON or OFF
         if ( payload.value > 0.5 ) {
-          digitalWrite(7,HIGH);
+          digitalWrite(STATUSLED,STATUSLED_ON);
         } else {
-          digitalWrite(7,LOW);
+          digitalWrite(STATUSLED,STATUSLED_OFF);
         }
-        network.write(txheader,&payload,sizeof(payload));
        break;
       case 101:
       // battery voltage
         payload.value=read_battery_voltage();
-        network.write(txheader,&payload,sizeof(payload));
         break;
       case 111:
       // sleeptimer1
         sleeptime1=payload.value;
-        network.write(txheader,&payload,sizeof(payload));
         break;
       case 112:
       // sleeptimer2
         sleeptime2=payload.value;
-        network.write(txheader,&payload,sizeof(payload));
         break;
       case 113:
       // sleeptimer3
         sleeptime3=payload.value;
-        network.write(txheader,&payload,sizeof(payload));
         break;
       case 114:
       // sleeptimer4
         sleeptime4=payload.value;
-        network.write(txheader,&payload,sizeof(payload));
         break;
       case 115:
       // radio on (=1) or off (=0) when sleep
         if ( payload.value > 0.5) radiomode=radio_listen; else radiomode=radio_sleep;
-        network.write(txheader,&payload,sizeof(payload));
+        break;
+      case 116:
+      // Voltage devider
+        voltagedivider = payload.value;
         break;
       case 118:
       // init_finished (=1)
         init_finished = ( payload.value > 0.5);
-        network.write(txheader,&payload,sizeof(payload));
         break;
-      default:
-      // Default: just send the paket back  
-        network.write(txheader,&payload,sizeof(payload));
+//      default:
+      // Default: just send the paket back - no action here  
     }
+    network.write(txheader,&payload,sizeof(payload));
 }
 
 void setup(void) {
@@ -170,7 +168,8 @@ void setup(void) {
 }
 
 float read_battery_voltage(void) {
-  float vmess;
+  int vmess;
+  float voltage;
   digitalWrite(VMESS_OUT, HIGH);
   sleep4ms(250);
   vmess=analogRead(VMESS_IN);
@@ -179,7 +178,8 @@ float read_battery_voltage(void) {
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   digitalWrite(VMESS_OUT, LOW);
-  return vmess / VOLTAGEDIVIDER;
+  voltage = vmess / (5 * voltagedivider);
+  return voltage;  
 }
 
 void loop(void) {
