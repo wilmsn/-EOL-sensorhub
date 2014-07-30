@@ -20,9 +20,6 @@ V3: Upgrade to Lowpower Library; display of a battery symbol
 // The outputpin for batterycontrol for the voltagedivider
 #define VMESS_OUT 1
 #define VMESS_IN A0
-// Berechnung VOLTAGEDIVIDER
-// (1023 * R1) / ( (R1 + R2) * 1,1 )
-#define VOLTAGEDIVIDER 870
 // 4 voltages for the battery (empty ... full)
 #define U0 3.5
 #define U1 3.6
@@ -106,6 +103,7 @@ boolean display_down = false;
 boolean low_voltage_flag = false;
 float networkuptime = 0;
 float temp;
+float voltagedivider = 1;
 int free_loop_counter = 0;
 //Some Var for restore after sleep of display
 float field1_val, field2_val, field3_val, field4_val;
@@ -141,32 +139,27 @@ void action_loop(void) {
       case 1: {
         // Temperature
         payload.value=get_temp();
-        network.write(txheader,&payload,sizeof(payload));
         free_loop_counter = 0;
        break; }
       case 21:
         // Set field 1
         field1_val=payload.value;
         print_field(field1_val,1);
-        network.write(txheader,&payload,sizeof(payload));
        break;
       case 22:
         // Set field 2
         field2_val=payload.value;
         print_field(field2_val,2);
-        network.write(txheader,&payload,sizeof(payload));
        break;
       case 23:
         // Set field 3
         field3_val=payload.value;
         print_field(field3_val,3);
-        network.write(txheader,&payload,sizeof(payload));
        break;
       case 24:
         // Set field 4
         field4_val=payload.value;
         print_field(field4_val,4);
-        network.write(txheader,&payload,sizeof(payload));
        break;
       case 31:
         // Displaylight ON <-> OFF
@@ -175,54 +168,47 @@ void action_loop(void) {
         } else  {
           digitalWrite(STATUSLED,STATUSLED_ON);
         }
-        network.write(txheader,&payload,sizeof(payload));
        break;
       case 41:
         // Display Sleepmode ON <-> OFF
         display_sleep(payload.value < 0.5);
-        network.write(txheader,&payload,sizeof(payload));
        break;
       case 101:  
       // battery voltage
         cur_voltage=read_battery_voltage();
         payload.value=cur_voltage;
         draw_battery(BATT_X0,BATT_Y0,cur_voltage);
-        network.write(txheader,&payload,sizeof(payload));  
         break;      
       case 111:
       // sleeptimer1
         sleeptime1=payload.value;
-        network.write(txheader,&payload,sizeof(payload));
         break;
       case 112:
       // sleeptimer2
         sleeptime2=payload.value;
-        network.write(txheader,&payload,sizeof(payload));
         break;
       case 113:
       // sleeptimer3
         sleeptime3=payload.value;
-        network.write(txheader,&payload,sizeof(payload));
         break;
       case 114:
       // sleeptimer4
         sleeptime4=payload.value;
-        network.write(txheader,&payload,sizeof(payload));
         break;
       case 115:
       // radio on (=1) or off (=0) when sleep
         if ( payload.value > 0.5) radiomode=radio_listen; else radiomode=radio_sleep;
-        network.write(txheader,&payload,sizeof(payload));
+        break;
+      case 116:
+      // Voltage devider
+        voltagedivider = payload.value;
         break;
       case 118:
       // init_finished (=1)
         init_finished = ( payload.value > 0.5);
-        network.write(txheader,&payload,sizeof(payload));
         break;
-      default:
-      // Default: just send the paket back  
-        network.write(txheader,&payload,sizeof(payload));
     }  
+    network.write(txheader,&payload,sizeof(payload));
 }  
 
 void setup(void) {
@@ -266,7 +252,7 @@ void setup(void) {
       init_loop_counter=0;
       action_loop(); 
     }
-    sleep4ms(30);
+    delay(30);
     init_loop_counter--;
     //just in case of initialisation is interrupted
     if (init_loop_counter < -1000) init_transmit=true;
@@ -326,16 +312,17 @@ void draw_temp(float t) {
 }
 
 float read_battery_voltage(void) {
-  float vmess, voltage;
+  int vmess;
+  float voltage;
   digitalWrite(VMESS_OUT, HIGH);
-  sleep4ms(250);
+  delay(100);
   vmess=analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   digitalWrite(VMESS_OUT, LOW);
-  voltage = vmess / VOLTAGEDIVIDER;
+  voltage = vmess / (5 * voltagedivider);
   if ( voltage < U0 ) {
     if ( ! low_voltage_flag ) {
       low_voltage_flag = true;
@@ -513,6 +500,7 @@ void loop(void) {
   } 
   if ( ! network_busy ) {
     // save energy get the temperature every 10. loop (with sleeptime 1min => every 10min)
+    free_loop_counter++;
     if (free_loop_counter == 11) get_temp();
   }
   if ( network.available() ) {
@@ -535,10 +523,10 @@ void loop(void) {
       wipe_antenna(ANT_X0, ANT_Y0);
     }
     if (loop_counter == 0) sleep4ms((unsigned int)(sleeptime1*1000)); else sleep4ms((unsigned int)(sleeptime2*1000));
-//    if ( radiomode == radio_sleep ) {
+    if ( radiomode == radio_sleep ) {
       radio.powerUp();
-//    }
-    draw_antenna(ANT_X0, ANT_Y0);
+      draw_antenna(ANT_X0, ANT_Y0);
+    }
     sleep4ms((unsigned int)(sleeptime3*1000));
     loop_counter++;
     if (loop_counter > 60000) loop_counter=1;

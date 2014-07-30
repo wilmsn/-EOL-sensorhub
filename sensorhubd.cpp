@@ -628,14 +628,18 @@ int main(int argc, char* argv[]) {
 
 				case 115: { // Init Radiobuffer
                     bool radio_always_on = (payload.value >0.5);
-					if ( radio_always_on ) sprintf(debug, "---Debug: Radio allways on for Node: %o.", sendernode);
-					else sprintf(debug, "---Debug: Radio allways off for Node: %o.", sendernode);
+					if ( radio_always_on ) sprintf(debug, "Node: %o: Radio allways on", sendernode);
+					else sprintf(debug, "Node: %o: Radio allways off", sendernode);
 					logmsg(7, debug);        
 					del_jobbuffer_entry(payload.Job, payload.seq);  
 				break;  } 
 				
+				case 116: { // Init Voltagedivider
+					sprintf(debug, "Node: %o: Set Voltagedivider to: %f.", sendernode, payload.value);
+					logmsg(7, debug);        
+					del_jobbuffer_entry(payload.Job, payload.seq);  
+				break;  } 
 				
-				// Geht das nicht auch ohne ??????????????????????????????????????????
 				case 118: {
 					sprintf(debug, DEBUGSTR "Node: %o Init finished.", sendernode);
 					logmsg(7, debug);        
@@ -660,14 +664,15 @@ int main(int argc, char* argv[]) {
 					rc=sqlite3_finalize(stmt);
 					if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
 					if ( init_waiting_jobs == 0) { 
-						sprintf (sql_stmt, "select sleeptime1, sleeptime2, sleeptime3, sleeptime4, radiomode from node where node_id = '0%o' LIMIT 1 ",sendernode);
+						sprintf (sql_stmt, "select sleeptime1, sleeptime2, sleeptime3, sleeptime4, radiomode, voltagedivider from node where node_id = '0%o' LIMIT 1 ",sendernode);
 						rc = sqlite3_prepare(db, sql_stmt, -1, &stmt, 0 ); 
 						if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, sql_stmt);
-						double sleeptime1=60000; // set defaults
+						double sleeptime1=60; // set defaults
 						double sleeptime2=60; // set defaults
-						double sleeptime3=60; // set defaults
-						double sleeptime4=60; // set defaults
+						double sleeptime3=1; // set defaults
+						double sleeptime4=1; // set defaults
 						double radiomode=0;
+						double voltagedivider=1;
 						if (sqlite3_step(stmt) == SQLITE_ROW) {
 							sleeptime1 = sqlite3_column_double (stmt, 0);
 							sleeptime2 = sqlite3_column_double (stmt, 1);
@@ -675,6 +680,7 @@ int main(int argc, char* argv[]) {
 							sleeptime4 = sqlite3_column_double (stmt, 3);
 							// radiomode not implemented yet ==> still use default !!!!!
 							radiomode = sqlite3_column_double (stmt, 4);			
+							voltagedivider = sqlite3_column_double (stmt, 5);			
 						}
 						rc=sqlite3_finalize(stmt);
 						if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
@@ -692,6 +698,9 @@ int main(int argc, char* argv[]) {
 						do_sql(sql_stmt);
 						// Channel 115 sets radiomode
 						sprintf(sql_stmt,"insert into JobBuffer(job_ID,Seq,Node_ID,Channel,Value, Type, Priority) values (%d,5,'0%o',115,%f,2,1)",init_jobno, sendernode, radiomode);
+						do_sql(sql_stmt);
+						// Channel 116 sets voltagedivider
+						sprintf(sql_stmt,"insert into JobBuffer(job_ID,Seq,Node_ID,Channel,Value, Type, Priority) values (%d,6,'0%o',116,%f,2,1)",init_jobno, sendernode, voltagedivider);
 						do_sql(sql_stmt);
 						// Channel 118 sets init is finished
 						sprintf(sql_stmt,"insert into jobbuffer(job_ID,seq,Node_ID,channel,value, Type, priority) values (%d,8,'0%o',118,1,2,1)",init_jobno, sendernode);
@@ -771,6 +780,11 @@ int main(int argc, char* argv[]) {
 			do_sql(sql_stmt);
 			sprintf (sql_stmt, "update schedule set utime = strftime('%%s','now') + interval where utime = 0 and interval > 0 and Triggered_By = 't' "); 
 			do_sql(sql_stmt);
+// Prepare the orders
+			ordersqlrefresh=true;
+       }
+// Orders can come from the dispatcher above or from outside by inserting a jobnumber into the table scheduled_jobs and sending a message to execute immedeatly	   
+	   if (ordersqlrefresh) {
 // Put all Jobentries into jobbuffer
 			sprintf (sql_stmt, 	"insert into jobbuffer (Job_ID, Seq, Node_ID, Channel, Type, Value, Sensor_ID, Priority, Utime)"
 								" select Job_ID, Seq, Node_ID, Channel, Type, Value, Sensor_ID, Priority, strftime('%%s','now') from Job2Jobbuffer ");
@@ -781,7 +795,6 @@ int main(int argc, char* argv[]) {
 //
 // End Dispatcher
 //
-			ordersqlrefresh=true;
 		}
 //
 // Orderloop: Tell the nodes what they have to do

@@ -63,7 +63,7 @@ CREATE TABLE Node
   Sleeptime3 int,
   Sleeptime4 int,
   Radiomode int,
-  Battery_ID int NOT NULL,
+  Battery_ID int NOT NULL, voltagedivider INT,
   CONSTRAINT Key1 PRIMARY KEY (Node_ID),
   CONSTRAINT Battery_ID FOREIGN KEY (Battery_ID) REFERENCES Battery (Battery_ID)
 );
