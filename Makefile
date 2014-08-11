@@ -14,7 +14,7 @@
 EXECDIR=/usr/bin
 #RF24NETWORKDIR=${HOME}/RF24Network
 RF24NETWORKDIR=../RF24Network
-SQLITE3DIR=../sqlite3
+SQLITE3DIR=/usr/include
 
 # The recommended compiler flags for the Raspberry Pi
 CCFLAGS=-Ofast -mfpu=vfp -mfloat-abi=hard -march=armv6zk -mtune=arm1176jzf-s

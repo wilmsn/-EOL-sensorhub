@@ -55,6 +55,8 @@ float sleeptime2 = 10;
 float sleeptime3 = 1;
 // Time to keep the network up if it was busy
 float sleeptime4 = 5;
+// The Voltagedivider - if you dont set it via channel 116 you will get the output of ADC
+float voltagedivider = 1;
 unsigned int init_loop_counter = 0;
 unsigned int loop_counter = 0;
 boolean init_finished = false;
@@ -76,13 +78,11 @@ void action_loop(void) {
         //****
         // insert here: payload.value=[result from sensor]
         payload.value=read_solar(); 
-        network.write(txheader,&payload,sizeof(payload));
        break;
       case 2:
         //****
         // insert here: payload.value=[result from sensor]
         payload.value=read_licht(); 
-        network.write(txheader,&payload,sizeof(payload));
        break;
       case 21:
         //****
@@ -92,47 +92,41 @@ void action_loop(void) {
         } else {
           digitalWrite(STATUSLED,STATUSLED_OFF); 
         }
-        network.write(txheader,&payload,sizeof(payload));
        break;
       case 101:
       // battery voltage
         payload.value=read_battery_voltage();
-        network.write(txheader,&payload,sizeof(payload));
         break;
       case 111:
       // sleeptimer1
         sleeptime1=payload.value;
-        network.write(txheader,&payload,sizeof(payload));
         break;
       case 112:
       // sleeptimer2
         sleeptime2=payload.value;
-        network.write(txheader,&payload,sizeof(payload));
         break;
       case 113:
       // sleeptimer3
         sleeptime3=payload.value;
-        network.write(txheader,&payload,sizeof(payload));
         break;
       case 114:
       // sleeptimer4
         sleeptime4=payload.value;
-        network.write(txheader,&payload,sizeof(payload));
         break;
       case 115:
       // radio on (=1) or off (=0) when sleep
         if ( payload.value > 0.5) radiomode=radio_listen; else radiomode=radio_sleep;
-        network.write(txheader,&payload,sizeof(payload));
+        break;
+      case 116:
+      // Voltage devider
+        voltagedivider = payload.value;
         break;
       case 118:
       // init_finished (=1)
         init_finished = ( payload.value > 0.5);
-        network.write(txheader,&payload,sizeof(payload));
         break;
-      default:
-      // Default: just send the paket back  
-        network.write(txheader,&payload,sizeof(payload));
     }
+    network.write(txheader,&payload,sizeof(payload));
 }
 
 
@@ -173,7 +167,7 @@ void setup(void) {
       init_loop_counter=0;
       action_loop();
     }
-    sleep4ms(30);
+    delay(30);
     init_loop_counter--;
     //just in case of initialisation is interrupted
     if (init_loop_counter < -1000) init_transmit=true;
@@ -184,30 +178,33 @@ void setup(void) {
 }
 
 float read_battery_voltage(void) {
-  float vmess;
+  int vmess;
+  float voltage;
   digitalWrite(VMESS_OUT, HIGH);
-  sleep4ms(250);
+  delay(500);
   vmess=analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
-  digitalWrite(VMESS_OUT, LOW);
-  return vmess / VOLTAGEDIVIDER;
+  voltage = vmess / (5 * voltagedivider);
+  return voltage;  
 }
 
 float read_solar(void) {
-  float vmess;
+  int vmess;
+  float voltage;
   vmess=analogRead(VMESS_SOLAR);
   vmess=vmess+analogRead(VMESS_SOLAR);
   vmess=vmess+analogRead(VMESS_SOLAR);
   vmess=vmess+analogRead(VMESS_SOLAR);
   vmess=vmess+analogRead(VMESS_SOLAR);
-  return vmess / VOLTAGEDIVIDER;
+  voltage = vmess / (5 * voltagedivider);
+  return voltage;  
 }
 
 float read_licht(void) {
-  float vmess;
+  int vmess;
   vmess=analogRead(VMESS_LICHT);
   vmess=vmess+analogRead(VMESS_LICHT);
   vmess=vmess+analogRead(VMESS_LICHT);
@@ -217,18 +214,10 @@ float read_licht(void) {
 }
 
 void loop(void) {
+//  digitalWrite(STATUSLED,STATUSLED_ON);
   if (network.update()) {
     network_busy = true;
     networkuptime = 0;
-  }
-  if ( ! network_busy ) {
-  //*****************
-  // Put anything you want to run frequently here
-  //*****************
-  
-  //#################
-  // END run frequently
-  //#################
   }
   if ( network.available() ) {
     network_busy = true;
@@ -240,6 +229,7 @@ void loop(void) {
   if (networkuptime > sleeptime4) {
     network_busy=false;
   }
+//  digitalWrite(STATUSLED,STATUSLED_OFF);
   if ( network_busy ) {
     sleep4ms(250);
     networkuptime=networkuptime+0.25;
