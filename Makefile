@@ -12,7 +12,7 @@
 # use make installDB to install a new and empty database (existing database will be deleted)
 #
 EXECDIR=/usr/bin
-#RF24NETWORKDIR=${HOME}/RF24Network
+RF24DIR=../RF24
 RF24NETWORKDIR=../RF24Network
 SQLITE3DIR=/usr/include
 
@@ -24,7 +24,7 @@ all: sensorhubd database
 
 # Make the sensorhub deamon
 sensorhubd: sensorhubd.cpp
-	g++ ${CCFLAGS} -Wall -I ${RF24NETWORKDIR} -I ${SQLITE3DIR} -lrf24-bcm -lrf24network -lsqlite3 $^ -o $@
+	g++ ${CCFLAGS} -Wall -I ${RF24DIR} -I ${RF24NETWORKDIR} -I ${SQLITE3DIR} -lrf24-bcm -lrf24network -lsqlite3 $^ -o $@
 
 # Make the database
 database:

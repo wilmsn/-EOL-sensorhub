@@ -204,7 +204,11 @@ CREATE VIEW Job_HR AS
 SELECT Job_Name, Job.Add_Info, JobStep.Job_ID, Seq, Type, JobStep.Add_Info, Value, ID, Sensor_ID, Priority
 FROM Job, JobStep
 WHERE job.job_id = jobstep.job_id;
-CREATE INDEX sensordata_utime on sensordata(utime);
+CREATE VIEW openjobs as
+select "open in scheduled_jobs: " || job_id from  scheduled_jobs
+union all
+select "open in jobbuffer: " || job_id || " " || seq || " " || node_id || " " || channel from jobbuffer;
+CREATE INDEX sensordata_utime on sensordata(Sensor_ID,utime);
 CREATE TRIGGER setactor_trigger after insert on setactor_ext
 begin
 insert into jobbuffer(job_id,seq,node_id,channel,type,value,Sensor_ID,Priority) 
