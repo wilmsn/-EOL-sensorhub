@@ -847,7 +847,7 @@ int main(int argc, char* argv[]) {
 				}
 			}
 		} 
-		usleep(1000); 
+		usleep(10000); 
 //
 //  end orderloop 
 //
