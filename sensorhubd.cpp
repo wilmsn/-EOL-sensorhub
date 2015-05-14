@@ -412,7 +412,11 @@ int main(int argc, char* argv[]) {
 	int init_jobno = 1;
 	int c;
 	long starttime=time(0);
-
+	// check if started as root
+	if ( getuid()!=0 ) {
+           fprintf(stdout, "sensorhubd has to be startet as user root\n");
+          exit(1);
+        }
 	// processing argc and argv[]
 	while (1) {
 		static struct option long_options[] =
