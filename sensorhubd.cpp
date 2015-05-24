@@ -533,8 +533,12 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 	sleep(2);
+	sprintf(debug, "starting radio... \n");
+	logmsg(1, debug);
 	radio.begin();
 	delay(5);
+	sprintf(debug, "starting network... \n");
+	logmsg(1, debug);
 	network.begin( 90, 0);
 	radio.setDataRate(RF24_250KBPS);
     if (verboselevel > 5) {
@@ -542,6 +546,7 @@ int main(int argc, char* argv[]) {
 		logmsg(1, debug);
 		radio.printDetails();
 	}
+	sprintf(debug, "open database... \n");
 	char sql_stmt[300];
 	int rc = sqlite3_open(DBFILE, &db);
 	if (rc) { logmsg (1, err_opendb);  exit(99); }
