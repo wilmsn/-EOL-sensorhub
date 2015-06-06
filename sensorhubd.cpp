@@ -52,7 +52,7 @@ Added Trigger
 
 //--------- End of global define -----------------
 
-
+#include <bcm2835.h>
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
@@ -86,7 +86,9 @@ FILE * pidfile_ptr;
 FILE * logfile_ptr;
 
 // Setup for GPIO 25 CE and CE0 CSN with SPI Speed @ 8Mhz
-RF24 radio(RPI_V2_GPIO_P1_22, BCM2835_SPI_CS0, BCM2835_SPI_SPEED_1MHZ);  
+// RF24 radio(RPI_V2_GPIO_P1_22, BCM2835_SPI0_CS0, BCM2835_SPI0_SPEED_1MHZ);  
+RF24 radio(22,0);
+
 RF24Network network(radio);
 
 // Structure of our payload
