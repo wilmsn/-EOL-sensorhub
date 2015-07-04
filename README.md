@@ -18,6 +18,32 @@ With:
 - only free software
 - low energy cost
  
+Quick start guide - using precompiled binaries:
+===============================================
+1. Go to your development directory
+
+   cd ~/entw
+
+2. Clone the sensorhub Repro
+
+   git clone https://github.com/wilmsn/sensorhub.git sensorhub
+
+3. Install the tar-ball
+   
+   cd /usr/local; sudo tar xvf ~/entw/sensorhub/rf24netw_inst.tar
+
+4. Change to the sensorhub folder and compile it
+
+   cd ~/entw/sensorhub
+   make
+   sudo mkdir -p /var/database
+   sudo touch  /var/database/sensorhub.db
+   sudo chmod 666  /var/database/sensorhub.db
+
+5. Do a test run
+
+   ./sensorhubd -v9  #Just stop it with ctrl-c
+
 Quick start guide:
 =================
 1. Go to your development directory
