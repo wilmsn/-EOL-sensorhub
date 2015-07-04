@@ -46,6 +46,8 @@ Quick start guide - using precompiled binaries:
 
    sudo chmod 666  /var/database/sensorhub.db
 
+   sudo make installDB
+
 5. Do a test run
 
    ./sensorhubd -v9  #Just stop it with ctrl-c
