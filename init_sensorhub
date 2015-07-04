@@ -18,7 +18,7 @@ case "$1" in
   start)
     echo -n "[....] Starting sensorhub "
     if [ ! -e $SENSORHUBPIDFILE ]; then 
-      /usr/local/bin/sensorhubd -d
+      /usr/local/bin/sensorhubd -d -n localhost -p 7072
       log_end_msg $?
     else
       echo -n "... already running with PID $SENSORHUBPID"

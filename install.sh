@@ -24,8 +24,8 @@ if [ $ID = 0 ]; then
     chmod 644 /var/database/sensorhub.db 
   fi
   echo "Install as User Root";
-  echo "copy sensorhubd ==> /usr/bin/sensorhubd"
-  cp sensorhubd /usr/bin/sensorhubd
+  echo "copy sensorhubd ==> /usr/local/bin/sensorhubd"
+  cp sensorhubd /usr/local/bin/sensorhubd
   echo "  init_sensorhub ==> /etc/init.d/sensorhub"
   cp ./init_sensorhub /etc/init.d/sensorhub
   chown root:root /etc/init.d/sensorhub

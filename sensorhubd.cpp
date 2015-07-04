@@ -35,7 +35,14 @@ Different start modes:
 To stop the programm press "CTRL C" or use "kill -15 <PID>"
 V0.6
 Added Trigger
-
+===================================
+V1.1
+Big changes in concept:
+Get ready to use externel frontend and logic modul ==> FHEM
+=> Mesured data will be written directly into FHEM via telnet interface
+=> Web-GUI will be reduced to minimum
+=> Trigger will be removed
+=> Schedules will be removed
 
 
 
@@ -72,6 +79,10 @@ Added Trigger
 #include <sys/msg.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h> 
+
 
 using namespace std;
 
@@ -79,9 +90,12 @@ enum logmode_t { systemlog, interactive, logfile };
 logmode_t logmode;
 int loglevel=4;
 int verboselevel = 2;
-bool start_daemon=false;
-bool use_logfile=false;
+int sockfd;
+bool start_daemon=false, use_logfile=false, host_set = false, port_set = false, telnet_active = false;
 char logfilename[300];
+char tn_hostname[20], tn_portno[7];
+struct sockaddr_in serv_addr;
+struct hostent *server;
 FILE * pidfile_ptr;
 FILE * logfile_ptr;
 
@@ -336,9 +350,70 @@ void del_jobbuffer_entry(uint16_t Job, uint16_t seq) {
 	ordersqlrefresh=true;
 }
 
+void exec_tn_cmd(const char *tn_cmd) {
+    int sockfd, portno, n;
+    struct sockaddr_in serv_addr;
+    struct hostent *server;
+	char debug[100];
+
+    portno = atoi(tn_portno);
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        sprintf(debug,"ERROR: opening socket");
+		logmsg(3,debug);
+	}	
+    server = gethostbyname(tn_hostname);
+    if (server == NULL) {
+        sprintf(debug,"ERROR: no such host\n");
+		logmsg(3,debug);
+    }
+    bzero((char *) &serv_addr, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    bcopy((char *)server->h_addr, 
+         (char *)&serv_addr.sin_addr.s_addr,
+         server->h_length);
+    serv_addr.sin_port = htons(portno);
+    if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) { 
+        sprintf(debug,"ERROR: connecting");
+		logmsg(3,debug);
+	}	
+    n = write(sockfd,tn_cmd,strlen(tn_cmd));
+    if (n < 0) {
+         sprintf(debug,"ERROR: writing to socket");
+		logmsg(3,debug);
+	}		 
+    close(sockfd);
+}
+
+
+void prepare_tn_cmd(const char *element, const uint16_t job, const uint16_t seq, const float value) {
+    sqlite3_stmt *mystmt;   
+	int rc;
+	char sql_stmt[300], 
+		 telnet_cmd[200], 
+		 debug[250];
+    bool got_value = false;		 
+
+	sprintf(sql_stmt,"select %s_name from %s where %s_ID in (select ID from JobStep where Job_ID = %u and seq = %u )", element, element, element, job, seq);
+	rc = sqlite3_prepare(db, sql_stmt, -1, &mystmt, 0 ); 
+	if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, sql_stmt);
+	if (sqlite3_step(mystmt) == SQLITE_ROW) {
+		sprintf( telnet_cmd, "set %s %f \n", sqlite3_column_text(mystmt, 0), value);
+		sprintf(debug, "Info: Telnet CMD: %s", telnet_cmd);
+		logmsg(6,debug);
+		got_value = true;
+	}
+	rc=sqlite3_finalize(mystmt);
+	if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
+	if ( got_value ) exec_tn_cmd(telnet_cmd);
+}
 
 void store_sensor_value(uint16_t job, uint16_t seq, float value) {
-	char sql_stmt[500];
+	char sql_stmt[500],  element[10];
+	if ( telnet_active ) { 
+	    sprintf(element, "sensor");
+		prepare_tn_cmd(element, job, seq, value); 
+	}
 	sprintf(sql_stmt,"insert or replace into sensordata (sensor_ID, utime, value) "
 					 "select ID,	strftime('%%s', datetime('now')), %f "
 					 " from JobStep "
@@ -348,6 +423,7 @@ void store_sensor_value(uint16_t job, uint16_t seq, float value) {
 					" where sensor_id = (select id from JobStep where Job_ID = %u and seq = %u and type=1) "
 					 , value, job, seq);
 	do_sql(sql_stmt);
+/*
 	// Set the trigger and start the corresponding job   
 	sprintf(sql_stmt,"insert into scheduled_jobs (Job_ID) "
                      "select job_ID from schedule where Triggered_By = 'v' and trigger_state = 's'  and Trigger_ID in ( "
@@ -378,6 +454,7 @@ void store_sensor_value(uint16_t job, uint16_t seq, float value) {
 					 "  ( ( %f < Level_Reset and Level_Reset < Level_Set ) "
                      " or ( %f > Level_Reset and Level_Reset > Level_Set ) ) and State = 's' and Sensor_ID = (select id from JobStep where Job_ID = %u and seq = %u and type=1) ", value, value, job, seq); 
 	do_sql(sql_stmt);	
+*/	
 }
 
 void store_actor_value(uint16_t job, uint16_t seq, float val) {
@@ -395,13 +472,17 @@ void sighandler(int signal) {
     exit (0);
 }
 
-void usage(char *prgname) {
+void usage(const char *prgname) {
 	fprintf(stdout, "Usage: %s <option>\n", prgname); 
 	fprintf(stdout, "with options: \n");
 	fprintf(stdout, "   -h or --help \n");
 	fprintf(stdout, "         Print help\n");
 	fprintf(stdout, "   -d or --daemon\n");
     fprintf(stdout, "         Start as daemon\n");
+	fprintf(stdout, "   -n or --hostname\n");
+    fprintf(stdout, "         Set hostname for telnet connection\n");
+	fprintf(stdout, "   -p or --port\n");
+    fprintf(stdout, "         Set port for telnet connection\n");
 	fprintf(stdout, "   -l <logfilename>  or --logfile <logfilename> \n");
     fprintf(stdout, "         Write log to logfile\n");
 	fprintf(stdout, "For clean exit use \"CTRL-C\" or \"kill -15 <pid>\"\n\n");  
@@ -425,11 +506,13 @@ int main(int argc, char* argv[]) {
 			{	{"daemon",  no_argument, 0, 'd'},
 				{"verbose",  required_argument, 0, 'v'},
 				{"logfile",    required_argument, 0, 'l'},
+				{"hostname",    required_argument, 0, 'n'},
+				{"port",    required_argument, 0, 'p'},
 				{"help", no_argument, 0, 'h'},
 				{0, 0, 0, 0} };
            /* getopt_long stores the option index here. */
 		int option_index = 0;
-		c = getopt_long (argc, argv, "?dhv:l:",long_options, &option_index);
+		c = getopt_long (argc, argv, "?dhv:l:n:p:",long_options, &option_index);
 		/* Detect the end of the options. */
 		if (c == -1) break;
 		switch (c) {
@@ -442,6 +525,14 @@ int main(int argc, char* argv[]) {
 			case 'l':
 				strcpy(logfilename, optarg);
 				use_logfile=true;
+			break;
+			case 'n':
+				sprintf(tn_hostname, "%s", optarg);
+				host_set = true;
+			break;
+			case 'p':
+				sprintf(tn_portno, "%s", optarg);
+				port_set = true;
 			break;
 			case 'h':
 			case '?':
@@ -527,6 +618,11 @@ int main(int argc, char* argv[]) {
 	fclose(pidfile_ptr);
 	sprintf(debug, "sensorhub running with PID: %d\n", pid);
 	logmsg(1, debug);
+	if ( port_set && host_set ) {
+		telnet_active = true;
+		sprintf(debug, "telnet session started: Host: %s Port: %s \n", tn_hostname, tn_portno);
+		logmsg(1, debug);	
+	}	
     // set up message queue
 	key = ftok("/var/www/index.html", 'S');
     if((msqid = msgget(key, 0666 | IPC_CREAT)) == -1) {
