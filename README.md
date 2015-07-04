@@ -30,14 +30,20 @@ Quick start guide - using precompiled binaries:
 
 3. Install the tar-ball
    
-   cd /usr/local; sudo tar xvf ~/entw/sensorhub/rf24netw_inst.tar
+   cd /usr/local
+
+   sudo tar xvf ~/entw/sensorhub/rf24netw_inst.tar
 
 4. Change to the sensorhub folder and compile it
 
    cd ~/entw/sensorhub
+
    make
+
    sudo mkdir -p /var/database
+
    sudo touch  /var/database/sensorhub.db
+
    sudo chmod 666  /var/database/sensorhub.db
 
 5. Do a test run
@@ -66,6 +72,7 @@ Quick start guide:
 5. Change to the RF24Network folder and compile it  
 
     cd RF24Network  
+
     sudo make install
 
 6. Clone the sensorhub Repro
@@ -75,9 +82,13 @@ Quick start guide:
 7. Change to the sensorhub folder and compile it  
    
    cd sensorhub
+
    make
+
    sudo mkdir -p /var/database
+
    sudo touch  /var/database/sensorhub.db
+
    sudo chmod 666  /var/database/sensorhub.db
 
 8. Do a test run
