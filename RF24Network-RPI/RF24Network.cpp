@@ -17,7 +17,7 @@
 #include <iostream>  
 #include <algorithm>
 #include "RF24Network_config.h"
-#include "../RF24/RF24.h"
+#include "RF24.h"
 #include "RF24Network.h"
 #
 
