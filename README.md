@@ -20,6 +20,14 @@ With:
  
 Quick start guide - using precompiled binaries:
 ===============================================
+Attention: If you want to run sensorhub on Raspberry Pi 2 (1024MB RAM)
+make check if your BCM2835 is configured
+Set:
+#define BCM2836_PERI_BASE 0x3f000000
+in  bcm2835.h
+for Raspberry Pi (512MB RAM) it is:
+#define BCM2835_PERI_BASE 0x20000000
+
 1. Go to your development directory
 
    cd ~/entw

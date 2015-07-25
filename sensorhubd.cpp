@@ -100,8 +100,8 @@ FILE * pidfile_ptr;
 FILE * logfile_ptr;
 
 // Setup for GPIO 25 CE and CE0 CSN with SPI Speed @ 8Mhz
-RF24 radio(RPI_V2_GPIO_P1_22, BCM2835_SPI_CS0, BCM2835_SPI_SPEED_1MHZ);  
-// RF24 radio(22,0);
+//RF24 radio(RPI_V2_GPIO_P1_22, BCM2835_SPI_CS0, BCM2835_SPI_SPEED_1MHZ);  
+RF24 radio(22,0,BCM2835_SPI_SPEED_1MHZ);
 
 RF24Network network(radio);
 
@@ -376,11 +376,12 @@ void exec_tn_cmd(const char *tn_cmd) {
     if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) { 
         sprintf(debug,"ERROR: connecting");
 		logmsg(3,debug);
-	}	
-    n = write(sockfd,tn_cmd,strlen(tn_cmd));
-    if (n < 0) {
-         sprintf(debug,"ERROR: writing to socket");
-		logmsg(3,debug);
+	} else {	
+		n = write(sockfd,tn_cmd,strlen(tn_cmd));
+		if (n < 0) {
+			sprintf(debug,"ERROR: writing to socket");
+			logmsg(3,debug);
+		}	
 	}		 
     close(sockfd);
 }
