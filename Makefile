@@ -20,7 +20,11 @@ SQLITE3DIR=/usr/include
 CCFLAGS=-Ofast -mfpu=vfp -mfloat-abi=hard -march=armv6zk -mtune=arm1176jzf-s
 
 # make all
-all: sensorhubd database
+all: rf24 sensorhubd database
+
+# Make the RF24 libs
+rf24:
+	$(MAKE) -C RF24Network-RPI
 
 # Make the sensorhub deamon
 sensorhubd: sensorhubd.cpp
@@ -30,12 +34,17 @@ sensorhubd: sensorhubd.cpp
 database:
 	./create_database.sh
 
-# clear build files
 clean:
-	rm sensorhubd sensorhub.db
+	rm -f sensorhubd sensorhub.db
+	$(MAKE) -C RF24Network-RPI clean
 
 # Install the sensorhub
-install: 
+install: all install_libs  install_sensorhub
+
+install_libs:
+	$(MAKE) -C RF24Network-RPI install	
+
+install_sensorhub:
 	./install.sh
 
 # Install a new empty database
