@@ -66,6 +66,8 @@ Get ready to use externel frontend and logic modul ==> FHEM
 #include <string> 
 #include <RF24.h>
 #include <RF24Network.h>
+//#include "../RF24/RF24.h"
+//#include "../RF24Network/RF24Network.h"
 #include <time.h>
 #include <sys/time.h>
 #include <stdio.h>
@@ -100,8 +102,8 @@ FILE * pidfile_ptr;
 FILE * logfile_ptr;
 
 // Setup for GPIO 25 CE and CE0 CSN with SPI Speed @ 8Mhz
-//RF24 radio(RPI_V2_GPIO_P1_22, BCM2835_SPI_CS0, BCM2835_SPI_SPEED_1MHZ);  
-RF24 radio(22,0,BCM2835_SPI_SPEED_1MHZ);
+RF24 radio(RPI_V2_GPIO_P1_22, BCM2835_SPI_CS0, BCM2835_SPI_SPEED_1MHZ);  
+//RF24 radio(22,0,BCM2835_SPI_SPEED_1MHZ);
 
 RF24Network network(radio);
 
@@ -458,9 +460,14 @@ void store_sensor_value(uint16_t job, uint16_t seq, float value) {
 */	
 }
 
-void store_actor_value(uint16_t job, uint16_t seq, float val) {
+void store_actor_value(uint16_t job, uint16_t seq, float value) {
 	char sql_stmt[250];
-	sprintf(sql_stmt,"update actor set Value = %f, Utime = strftime('%%s', datetime('now')) where actor_id = (select actor_ID from JobBuffer a, actor b where a.node_id = b.node_id and a.channel=b.channel and a.Job_ID = %u and a.Seq = %u)", val, job, seq);              
+	sprintf(sql_stmt,"insert or replace into actordata (actor_ID, utime, value) "
+					 "select ID,	strftime('%%s', datetime('now')), %f "
+					 " from JobStep "
+					 "where Job_ID = %u and seq = %u ", value, job, seq);
+	do_sql(sql_stmt);
+	sprintf(sql_stmt,"update actor set Value = %f, Utime = strftime('%%s', datetime('now')) where actor_id = (select actor_ID from JobBuffer a, actor b where a.node_id = b.node_id and a.channel=b.channel and a.Job_ID = %u and a.Seq = %u)", value, job, seq);              
 	do_sql(sql_stmt);
 }
 
