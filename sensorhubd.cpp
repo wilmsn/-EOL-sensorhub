@@ -461,7 +461,11 @@ void store_sensor_value(uint16_t job, uint16_t seq, float value) {
 }
 
 void store_actor_value(uint16_t job, uint16_t seq, float value) {
-	char sql_stmt[250];
+	char sql_stmt[500],   element[10];
+	if ( telnet_active ) { 
+	    sprintf(element, "actor");
+		prepare_tn_cmd(element, job, seq, value); 
+	}
 	sprintf(sql_stmt,"insert or replace into actordata (actor_ID, utime, value) "
 					 "select ID,	strftime('%%s', datetime('now')), %f "
 					 " from JobStep "

@@ -12,12 +12,14 @@
 . /lib/lsb/init-functions
 SERVICENAME=sensorhub
 SENSORHUBPIDFILE=/var/run/sensorhubd.pid
-SENSORHUBPID=`cat $SENSORHUBPIDFILE` > /dev/null 2>1
+if [ -e ${SENSORHUBPIDFILE} ]; then
+  SENSORHUBPID=`cat ${SENSORHUBPIDFILE}` > /dev/null 2>1
+fi
 
 case "$1" in
   start)
     echo -n "[....] Starting sensorhub "
-    if [ ! -e $SENSORHUBPIDFILE ]; then 
+    if [ ! -e ${SENSORHUBPIDFILE} ]; then 
       /usr/local/bin/sensorhubd -d -n localhost -p 7072
       log_end_msg $?
     else
@@ -27,9 +29,10 @@ case "$1" in
     ;;
   stop)
     echo -n "[....] Stopping sensorhub ..."
-    if [ "$SENSORHUBPID" ]; then 
-      kill -15 $SENSORHUBPID
+    if [ "${SENSORHUBPID}" ]; then 
+      kill -15 ${SENSORHUBPID}
       log_end_msg $?
+      rm ${SENSORHUBPIDFILE}
     else
       echo -n "not running ..."
       log_end_msg 1
@@ -40,7 +43,7 @@ case "$1" in
 	/usr/sbin/service $SERVICENAME start	
 	;;
   *)
-    echo "Usage: service $SERVICENAME {start|stop|restart}"
+    echo "Usage: service ${SERVICENAME} {start|stop|restart}"
     exit 1
     ;;
 esac
