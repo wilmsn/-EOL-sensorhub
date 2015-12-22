@@ -1,0 +1,14 @@
+#!/bin/bash
+DATE=`date`
+RC=2
+while [ $RC -ne 0 ]; do
+    SQL="insert into  Scheduled_Jobs (Job_ID) select job_id from job where job_name = '${1}' and job_id not in ( select job_id from Scheduled_Jobs ) ; "
+    SQL1="insert into  Scheduled_Jobs_hist (Job_ID) select job_id from job where job_name = '${1}'; "
+    echo $SQL | /usr/bin/sqlite3 /var/database/sensorhub.db
+    RC=$?
+    echo "$DATE (Result $RC) : $SQL" >> /tmp/startjob.log
+    sleep 1
+done
+echo $SQL1 | /usr/bin/sqlite3 /var/database/sensorhub.db
+/opt/sensorhub/send_msg
+

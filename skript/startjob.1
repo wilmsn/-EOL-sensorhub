@@ -1,0 +1,12 @@
+#!/bin/bash
+DATE=`date`
+if [ -n "$2" ]; then
+  SQL="insert into  Scheduled_Jobs (Job_ID) select job_id from job where job_name = '${1}_${2}'; "
+  SQL1="insert into  Scheduled_Jobs_hist (Job_ID) select job_id from job where job_name = '${1}_${2}'; "
+else
+  SQL="insert into  Scheduled_Jobs (Job_ID) select job_id from job where job_name = '${1}'; "
+  SQL1="insert into  Scheduled_Jobs_hist (Job_ID) select job_id from job where job_name = '${1}'; "
+fi
+echo $SQL | /usr/bin/sqlite3 /var/database/sensorhub.db
+echo "$DATE (Result $?) : $SQL" >> /tmp/startjob.log
+echo $SQL1 | /usr/bin/sqlite3 /var/database/sensorhub.db
