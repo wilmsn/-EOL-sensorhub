@@ -1,0 +1,5 @@
+#!/bin/bash
+
+echo "{ my $s1="HT_Wohnzimmer1";;  ReadingsVal($s1,"temperature",0);; }" | telnet localhost 7072 
+
+

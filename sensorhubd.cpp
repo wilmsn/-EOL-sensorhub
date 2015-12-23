@@ -43,14 +43,17 @@ Get ready to use externel frontend and logic modul ==> FHEM
 => Web-GUI will be reduced to minimum
 => Trigger will be removed
 => Schedules will be removed
-
-
+V1.20
+Change of Database Layout
+Table: 
+ACTOR and SENSOR joined to SENSOR.
+ACTOTDATA and SENSORDATA joined to SENSORDATA.
 
 
 
 */
-#define DBFILE "/var/database/sensorhub.db"
-////////#define DBFILE "/home/norbert/entw/sensorhub/sensorhub_neu.db"
+///#define DBFILE "/var/database/sensorhub.db"
+#define DBFILE "/home/norbert/entw/sensorhub/sensorhub_neu.db"
 #define LOGFILE "/var/log/sensorhubd.log"
 #define PIDFILE "/var/run/sensorhubd.pid"
 #define ERRSTR "ERROR: "
@@ -170,24 +173,6 @@ int getnodeadr(char *node) {
 	if (err) mynodeadr = 0;
 	return mynodeadr;
 }
-/*
-void getnodestr(uint16_t node, char* nodestr) {
-	uint16_t aktpos=0b0000000000000111;
-	for(int i=5;i>0;i--){
-		if ((node>>(3*(5-i)) & aktpos) > 0) {
-			nodestr[i]=(node>>(3*(5-i)) & aktpos) + '0';
-		} else {
-			nodestr[i]='0';
-		}
-		nodestr[0]='0';
-	}
-    while(nodestr[1]=='0') {
-		for(int j=0;j<6;j++) {
-			nodestr[j]=nodestr[j+1];
-		}
-	}
-}
-*/
 void logmsg(int mesgloglevel, char *mymsg){
 	if ( logmode == logfile ) {
 		if (mesgloglevel <= verboselevel) {
@@ -387,8 +372,28 @@ void exec_tn_cmd(const char *tn_cmd) {
 	}		 
     close(sockfd);
 }
+void prepare_tn_cmd(const uint16_t job, const uint16_t seq, const float value) {
+    sqlite3_stmt *mystmt;   
+	int rc;
+	char sql_stmt[300], 
+		 telnet_cmd[200], 
+		 debug[250];
+    bool got_value = false;		 
 
-
+	sprintf(sql_stmt,"select sensor_name from sensor where sensor_ID in (select ID from JobStep where Job_ID = %u and seq = %u )", job, seq);
+	rc = sqlite3_prepare(db, sql_stmt, -1, &mystmt, 0 ); 
+	if ( rc != SQLITE_OK) log_db_err(rc, err_prepare, sql_stmt);
+	if (sqlite3_step(mystmt) == SQLITE_ROW) {
+		sprintf( telnet_cmd, "set %s %f \n", sqlite3_column_text(mystmt, 0), value);
+		sprintf(debug, "Info: Telnet CMD: %s", telnet_cmd);
+		logmsg(6,debug);
+		got_value = true;
+	}
+	rc=sqlite3_finalize(mystmt);
+	if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
+	if ( got_value ) exec_tn_cmd(telnet_cmd);
+}
+/*
 void prepare_tn_cmd(const char *element, const uint16_t job, const uint16_t seq, const float value) {
     sqlite3_stmt *mystmt;   
 	int rc;
@@ -410,7 +415,24 @@ void prepare_tn_cmd(const char *element, const uint16_t job, const uint16_t seq,
 	if ( rc != SQLITE_OK) log_db_err(rc, err_finalize, sql_stmt);
 	if ( got_value ) exec_tn_cmd(telnet_cmd);
 }
+*/
+void store_sensor_value(uint16_t job, uint16_t seq, float value) {
+	char sql_stmt[500];
+	if ( telnet_active ) { 
+		prepare_tn_cmd(job, seq, value); 
+	}
+	sprintf(sql_stmt,"insert or replace into sensordata (sensor_ID, utime, value) "
+					 "select ID,	strftime('%%s', datetime('now')), %f "
+					 " from JobStep "
+					 "where Job_ID = %u and seq = %u ", value, job, seq);
+	do_sql(sql_stmt);
+	sprintf(sql_stmt,"update sensor set value= %f, Utime = strftime('%%s', datetime('now')) "
+					" where sensor_id = (select id from JobStep where Job_ID = %u and seq = %u and type=1) "
+					 , value, job, seq);
+	do_sql(sql_stmt);
+}
 
+/*
 void store_sensor_value(uint16_t job, uint16_t seq, float value) {
 	char sql_stmt[500],  element[10];
 	if ( telnet_active ) { 
@@ -426,40 +448,7 @@ void store_sensor_value(uint16_t job, uint16_t seq, float value) {
 					" where sensor_id = (select id from JobStep where Job_ID = %u and seq = %u and type=1) "
 					 , value, job, seq);
 	do_sql(sql_stmt);
-/*
-	// Set the trigger and start the corresponding job   
-	sprintf(sql_stmt,"insert into scheduled_jobs (Job_ID) "
-                     "select job_ID from schedule where Triggered_By = 'v' and trigger_state = 's'  and Trigger_ID in ( "
-                     "select Trigger_ID from trigger where "
-					 "  ( ( %f < Level_Set and Level_Set < Level_Reset ) "
-					 " or ( %f > Level_Set and Level_Set > Level_Reset ) ) and State = 'r' and Sensor_ID = (select id from JobStep where Job_ID = %u and seq = %u and type=1) ) ", value, value, job, seq);
-	do_sql(sql_stmt);
-	sprintf(sql_stmt,"insert into triggerdata(trigger_id, state) select trigger_id, 's' from trigger where "
-					 "  ( ( %f < Level_Set and Level_Set < Level_Reset ) "
-					 " or ( %f > Level_Set and Level_Set > Level_Reset ) ) and State = 'r' and Sensor_ID = (select id from JobStep where Job_ID = %u and seq = %u and type=1) ", value, value, job, seq);
-	do_sql(sql_stmt);
-	sprintf(sql_stmt,"update trigger set State = 's' where "
-					 "  ( ( %f < Level_Set and Level_Set < Level_Reset ) "
-					 " or ( %f > Level_Set and Level_Set > Level_Reset ) ) and State = 'r' and Sensor_ID = (select id from JobStep where Job_ID = %u and seq = %u and type=1) ", value, value, job, seq);
-	do_sql(sql_stmt);
-	// Reset the trigger and start the corresponding job   
-	sprintf(sql_stmt,"insert into scheduled_jobs (Job_ID) "
-                     "select job_ID from schedule where Triggered_By = 'v' and trigger_state = 'r'  and Trigger_ID in ( "
-                     "select Trigger_ID from trigger where "
-					 "  ( ( %f < Level_Reset and Level_Reset < Level_Set ) "
-                     " or ( %f > Level_Reset and Level_Reset > Level_Set ) ) and State = 's' and Sensor_ID = (select id from JobStep where Job_ID = %u and seq = %u and type=1) ) ", value, value, job, seq); 
-	do_sql(sql_stmt);
-	sprintf(sql_stmt,"insert into triggerdata(trigger_id, state) select trigger_id, 'r' from trigger where "
-					 "  ( ( %f < Level_Reset and Level_Reset < Level_Set ) "
-                     " or ( %f > Level_Reset and Level_Reset > Level_Set ) ) and State = 's' and Sensor_ID = (select id from JobStep where Job_ID = %u and seq = %u and type=1) ", value, value, job, seq); 
-	do_sql(sql_stmt);	
-	sprintf(sql_stmt,"update trigger set State = 'r' where "
-					 "  ( ( %f < Level_Reset and Level_Reset < Level_Set ) "
-                     " or ( %f > Level_Reset and Level_Reset > Level_Set ) ) and State = 's' and Sensor_ID = (select id from JobStep where Job_ID = %u and seq = %u and type=1) ", value, value, job, seq); 
-	do_sql(sql_stmt);	
-*/	
 }
-
 void store_actor_value(uint16_t job, uint16_t seq, float value) {
 	char sql_stmt[500],   element[10];
 	if ( telnet_active ) { 
@@ -474,7 +463,7 @@ void store_actor_value(uint16_t job, uint16_t seq, float value) {
 	sprintf(sql_stmt,"update actor set Value = %f, Utime = strftime('%%s', datetime('now')) where actor_id = (select actor_ID from JobBuffer a, actor b where a.node_id = b.node_id and a.channel=b.channel and a.Job_ID = %u and a.Seq = %u)", value, job, seq);              
 	do_sql(sql_stmt);
 }
-
+*/
 void sighandler(int signal) {
     char debug[80];
 	sprintf(debug, "\nSIGTERM: Shutting down ...");
@@ -665,7 +654,7 @@ int main(int argc, char* argv[]) {
 	logmsg(9, sql_stmt);        
     do_sql(sql_stmt);
     // End Cleanup	
-    long int dispatch_time=0;
+    // long int dispatch_time=0;
 	long int sent_time=0;
 	long int akt_time;
     while(1) {
@@ -689,7 +678,7 @@ int main(int argc, char* argv[]) {
 			uint16_t sendernode=rxheader.from_node;
 			switch (rxheader.type) {
 
-				case 1 ... 20: {
+				case 1 ... 99: {
 				// Sensor 
 					if (is_jobbuffer_entry(payload.Job, payload.seq)) {
 						store_sensor_value(payload.Job, payload.seq, payload.value); 
@@ -698,7 +687,7 @@ int main(int argc, char* argv[]) {
 						del_jobbuffer_entry(payload.Job, payload.seq);
 					}
 				break; }
- 
+ /*
 				case 21 ... 99: {
 				// Actor 
 					if (is_jobbuffer_entry(payload.Job, payload.seq)) {
@@ -708,7 +697,7 @@ int main(int argc, char* argv[]) {
 						del_jobbuffer_entry(payload.Job, payload.seq);
 					}
 				break; }
-
+*/
 				case 101: {
 				// battery voltage
 					if (is_jobbuffer_entry(payload.Job, payload.seq)) {
@@ -851,9 +840,10 @@ int main(int argc, char* argv[]) {
 				}
 			}
 		} // network.available
+/*  
 //
 // Dispatcher: Look if the is anything to schedule
-//
+// ==> Dispatcher komplett ausbauen 
 		if ( time(0) > dispatch_time + 59 ) {  // check every minute if we have jobs to schedule
 			dispatch_time = time(0);
 //
@@ -864,44 +854,45 @@ int main(int argc, char* argv[]) {
 			do_sql(sql_stmt);
 //
 // Case 1: Jobs that run frequently - increment "start" by "interval" minutes 
-//
+// ===> wird nicht mehr benoetigt
 			sprintf (sql_stmt, "insert into Scheduled_Jobs (Job_ID)"
 							   " select Job_ID from schedule"
 							   "  where utime <= strftime('%%s','now') and interval > 0 and Triggered_By = 't' ");
 			do_sql(sql_stmt);
 			sprintf (sql_stmt, "update schedule set utime =  utime+(1+((strftime('%%s','now')-utime)/interval))*interval "
 							   "where utime < strftime('%%s','now') and interval > 0 and Triggered_By = 't' "); 
-			do_sql(sql_stmt); 
+			do_sql(sql_stmt);   
 //
 // Case 2: Jobs that run  immeadeately (utime = 0) and run only once (interval = 0)
-//
+// ===> wird nicht mehr benoetigt
 			sprintf (sql_stmt, "insert into Scheduled_Jobs (Job_ID)"
 							   " select Job_ID from schedule "
 							   "  where utime = 0 and interval = 0  and Triggered_By = 't' ");
 			do_sql(sql_stmt);
 			sprintf (sql_stmt, "delete from schedule where utime = 0 and interval = 0 and Triggered_By = 't' "); 
-			do_sql(sql_stmt);
+			do_sql(sql_stmt); 
 //
 // Case 3: Jobs that run at a scheduled time (utime) and run only once (interval = 0)
-//
+// ===> wird nicht mehr benoetigt
 			sprintf (sql_stmt, "insert into Scheduled_Jobs (Job_ID)"
 							   " select Job_ID from schedule "
 							   "  where utime <= strftime('%%s','now') and interval = 0 and Triggered_By = 't' ");
 			do_sql(sql_stmt);
 			sprintf (sql_stmt, "delete from schedule where utime <= strftime('%%s','now') and interval = 0 and Triggered_By = 't' "); 
-			do_sql(sql_stmt);
+			do_sql(sql_stmt); 
 //
 // Case 4: Jobs that start immeadeately (utime = 0) and run every <interval> minutes
-// 
+//  ===> wird nicht mehr benoetigt
 			sprintf (sql_stmt, "insert into Scheduled_Jobs (Job_ID)"
 							   " select Job_ID from schedule "
 							   " where utime = 0 and interval > 0 and Triggered_By = 't' ");
 			do_sql(sql_stmt);
 			sprintf (sql_stmt, "update schedule set utime = strftime('%%s','now') + interval where utime = 0 and interval > 0 and Triggered_By = 't' "); 
-			do_sql(sql_stmt);
+			do_sql(sql_stmt); 
 // Prepare the orders
-			ordersqlrefresh=true;
+			ordersqlrefresh=true; 
        }
+
 // Orders can come from the dispatcher above or from outside by inserting a jobnumber into the table scheduled_jobs and sending a message to execute immedeatly	   
 	   if (ordersqlrefresh) {
 // Put all Jobentries into jobbuffer
@@ -914,7 +905,8 @@ int main(int argc, char* argv[]) {
 //
 // End Dispatcher
 //
-		}
+		} 
+*/
 //
 // Orderloop: Tell the nodes what they have to do
 //

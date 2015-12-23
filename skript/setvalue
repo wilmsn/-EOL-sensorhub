@@ -1,0 +1,26 @@
+#!/bin/bash
+
+RC=2
+WHERESTR="where Sensor_Name = '"${1}"' ; "
+SQL="select Sensor_Name from sensor "$WHERESTR
+#echo $SQL
+ISSENSOR=`echo $SQL | /usr/bin/sqlite3 /var/database/sensorhub.db`
+#echo "#"$ISSENSOR"#"
+if [ -z $ISSENSOR ]; then
+  TAB="actor"
+  WHERESTR="where Actor_Name = '"${1}"' ; "
+else
+  TAB="sensor"
+fi
+#echo "Tab ist "$TAB
+while [ $RC -ne 0 ]; do
+  SQL="insert into "$TAB"data("$TAB"_ID,Utime,Value) select "$TAB"_ID, strftime('%s', datetime('now')), ${2} from $TAB "$WHERESTR
+#  echo $SQL
+  echo $SQL | /usr/bin/sqlite3 /var/database/sensorhub.db
+  RC=$?
+  sleep 1
+done
+SQL="update $TAB set Value = $2, Utime = strftime('%s', datetime('now')) "$WHERESTR
+#echo $SQL
+echo $SQL | /usr/bin/sqlite3 /var/database/sensorhub.db
+
