@@ -55,11 +55,12 @@ Get ready to use externel frontend and logic modul ==> FHEM
 #define PIDFILE "/var/run/sensorhubd.pid"
 #define ERRSTR "ERROR: "
 #define DEBUGSTR "Debug: "
+#define RADIOCHANNEL 90
 /////#define MSG_KEY 4711
 
 //--------- End of global define -----------------
 
-#include <bcm2835.h>
+#include <RF24/utility/RPi/bcm2835.h>
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
@@ -649,7 +650,7 @@ int main(int argc, char* argv[]) {
 	delay(5);
 	sprintf(debug, "starting network... \n");
 	logmsg(1, debug);
-	network.begin( 90, 0);
+	network.begin( RADIOCHANNEL, 0);
 	radio.setDataRate(RF24_250KBPS);
     if (verboselevel > 5) {
 		sprintf(debug,"\n\n");
