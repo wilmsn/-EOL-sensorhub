@@ -6,7 +6,7 @@ V3: Upgrade to Lowpower Library; display of a battery symbol
 // Define a valid radiochannel here
 #define RADIOCHANNEL 90
 // This node: Use octal numbers starting with "0": "041" is child 4 of node 1
-#define NODE 03
+#define NODE 054
 // The CE Pin of the Radio module
 #define RADIO_CE_PIN 10
 // The CS Pin of the Radio module
