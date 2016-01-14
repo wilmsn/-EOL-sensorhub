@@ -472,8 +472,8 @@ int main(int argc, char* argv[]) {
 	delay(5);
 	sprintf(debug, "starting network... \n");
 	logmsg(1, debug);
-	network.begin( 90, 0);
-	radio.setDataRate(RF24_250KBPS);
+	network.begin( RADIOCHANNEL, 0);
+	radio.setDataRate(RADIOSPEED);
     if (verboselevel > 5) {
 		sprintf(debug,"\n\n");
 		logmsg(1, debug);
@@ -491,8 +491,8 @@ int main(int argc, char* argv[]) {
 	long int akt_time;
     while(1) {
 		// check for external messages
-		if (msgrcv(msqid, &mesg_buf, sizeof(mesg_buf.mesg)-1, 0, IPC_NOWAIT) > 0) {
-			sprintf(debug, "MESG: received Message: Type: %ld Mesg: Node: %s Channel: %d Value: %f", mesg_buf.mtype, mesg_buf.mesg.node, mesg_buf.mesg.channel, mesg_buf.mesg.value);
+		if (msgrcv(msqid, &mesg_buf, sizeof(mesg_buf), 0, IPC_NOWAIT) > 0) {
+			sprintf(debug, "MESG: received Message: Type: %d Mesg: Node: %s Channel: %d Value: %f", mesg_buf.mtype, mesg_buf.node, mesg_buf.channel, mesg_buf.value);
 			logmsg(7,debug);
 //			if ( mesg_buf.mesg == 1 ) {
 				ordersqlrefresh = true;
