@@ -1,5 +1,5 @@
 // Define a valid radiochannel here
-#define RADIOCHANNEL 90
+#define RADIOCHANNEL 10
 // This node: Use octal numbers starting with "0": "041" is child 4 of node 1
 #define NODE 03
 // The CE Pin of the Radio module
@@ -30,11 +30,9 @@
 ISR(WDT_vect) { watchdogEvent(); }
 
 // Structure of our payload
-struct payload_t
-{
-  uint16_t orderno;
-  uint16_t seq;
-  float value;
+struct payload_t {
+  uint16_t   orderno;
+  char    value[10];
 };
 
 payload_t payload;
@@ -91,18 +89,12 @@ void action_loop(void) {
       case 21:
         //****
         // insert here: action = payload.value
-        // Switch the StatusLED ON or OFF
-        if ( payload.value > 0.5 ) {
-          digitalWrite(STATUSLED,STATUSLED_ON);
-        } else {
-          digitalWrite(STATUSLED,STATUSLED_OFF);
-        }
        break;
       case 101:
       // battery voltage
-        payload.value=read_battery_voltage();
+//        payload.value=read_battery_voltage();
         break;
-      case 111:
+/*      case 111:
       // sleeptimer1
         sleeptime1=payload.value;
         break;
@@ -125,10 +117,10 @@ void action_loop(void) {
       case 116:
       // Voltage devider
         voltagedivider = payload.value;
-        break;
+        break; */
       case 118:
       // init_finished (=1)
-        init_finished = ( payload.value > 0.5);
+        init_finished = (1 == 1); //( payload.value > 0.5);
         break;
 //      default:
       // Default: just send the paket back - no action here  
@@ -165,8 +157,7 @@ void setup(void) {
     if ( init_transmit && init_loop_counter < 1 ) {
       txheader.type=119;
       payload.orderno=0;
-      payload.seq=0;
-      payload.value=0;
+//      payload.value=0;
       network.write(txheader,&payload,sizeof(payload));
       Serial.println("Paket gesendet");
       radio.printDetails();

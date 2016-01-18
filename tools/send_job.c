@@ -4,22 +4,43 @@
 #include <string>     // std::string, std::stoi
 #include <stdio.h>
 #include <string.h>
+#include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
-#include <sys/types.h>
 
-using namespace std;
-
- struct mesg_buf_t mesg_buf;
- key_t key = MSG_KEY;
- int msqid;
+key_t key = MSG_KEY;
 
 int main(int argc, char* argv[]) {
 
-  mesg_buf.mtype = 44;
-  sprintf(mesg_buf.node,"%s", argv[1]);
-  mesg_buf.channel=stoi(argv[2]);
-  mesg_buf.value=stof(argv[3]);
+    printf(" argc: %d\n", argc);
+	switch(stoi(argv[1])) {
+      case 1:
+      case 2:
+      case 3:
+		// reload sensorhub inmemory DB
+		mesg_buf.mtype=stoi(argv[1]);
+      break;
+      case 10:
+		// reload sensorhub inmemory DB
+		mesg_buf.mtype=stoi(argv[1]);
+		sprintf(mesg_buf.name,"%s",argv[2]);
+		sprintf(mesg_buf.value,"%s",argv[3]);
+      break;
+      case 11:
+		// reload sensorhub inmemory DB
+		mesg_buf.mtype=stoi(argv[1]);
+		sprintf(mesg_buf.name,"%s",argv[2]);
+		sprintf(mesg_buf.value,"%s",argv[3]);
+		mesg_buf.prio=stoi(argv[4]);
+      break;
+    //default:
+	// xxx
+	}
+
+//	mesg_buf.mtype = 1;
+//  sprintf(mesg_buf.node,"%s", argv[1]);
+//  mesg_buf.channel=stoi(argv[2]);
+//  mesg_buf.value=stof(argv[3]);
 
   msqid = msgget(key, IPC_CREAT | 0666);  
   if ( msqid > 0)

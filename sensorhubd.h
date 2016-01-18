@@ -108,30 +108,32 @@ RF24Network network(radio);
 
 // Structure of our payload
 struct payload_t {
-  uint16_t Job;
-  uint16_t seq; 
-  float value;
+  uint16_t 	orderno;
+  char 		value[10];
 };
 payload_t payload;
 
+uint16_t orderno;
+
 // Structure to handle the orderqueue
 struct order_t {
-  uint16_t Job;
-  uint16_t seq; 
-  uint16_t to_node; 
-  unsigned char channel; 
-  float value;
+  uint16_t 	     orderno;
+  uint16_t       to_node; 
+  unsigned char  channel; 
+  char			 name[30];
+  char 		     value[20];
 };
+order_t order[7]; // we do not handle more than 6 orders (one per subnode 1...6) at one time
 
 
-mesg_buf_t mesg_buf;
+//mesg_buf_t mesg_buf;
 
 key_t key = MSG_KEY;
 
 int orderloopcount=0;
 int ordersqlexeccount=0;
 bool ordersqlrefresh=true;
-int msqid;
+//int msqid;
 
 sqlite3 *db;
 sqlite3 *dbim;
@@ -151,7 +153,8 @@ char msg_startup[]="Startup sensorhubd";
 
 long runtime(long starttime);
 
-int getnodeadr(char *node);
+
+uint16_t getnodeadr(char *node);
 
 void logmsg(int mesgloglevel, char *mymsg);
 
@@ -167,15 +170,20 @@ bool is_jobbuffer_entry(uint16_t Job, uint16_t seq);
 
 void del_jobbuffer_entry(uint16_t Job, uint16_t seq);
 
+void truncate_jobbuffer(sqlite3 *db);
+
+void list_jobbuffer_entry(sqlite3 *db);
+
 void exec_tn_cmd(const char *tn_cmd);
 
 void prepare_tn_cmd(const uint16_t job, const uint16_t seq, const float value);
 
-void store_sensor_value(uint16_t job, uint16_t seq, float value);
+void store_sensor_value(sqlite3 *db, uint16_t orderno, char *value);
 
 void sighandler(int signal);
 
 void usage(const char *prgname);
 
 int main(int argc, char* argv[]);
+
 #endif // _SENSORHUBD_H_

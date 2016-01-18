@@ -21,7 +21,7 @@ TOOLSDIR=tools
 CCFLAGS=-Ofast -mfpu=vfp -mfloat-abi=hard -march=armv6zk -mtune=arm1176jzf-s
 
 # make all
-all: sensorhubd database tools
+all: sensorhubd tools
 
 # Make the sensorhub deamon
 sensorhubd: sensorhubd.cpp
