@@ -60,15 +60,13 @@ Get ready to use externel frontend and logic modul ==> FHEM
 
 //--------- End of global define -----------------
 
-#include <RF24/utility/RPi/bcm2835.h>
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
 #include <string> 
-#include <RF24.h>
-#include <RF24Network.h>
-//#include "../RF24/RF24.h"
-//#include "../RF24Network/RF24Network.h"
+#include <RF24/RF24.h>
+#include <RF24/utility/RPi/bcm2835.h>
+#include <RF24Network/RF24Network.h>
 #include <time.h>
 #include <sys/time.h>
 #include <stdio.h>
