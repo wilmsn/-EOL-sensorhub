@@ -6,8 +6,6 @@
  version 2 as published by the Free Software Foundation.
  */
 
-//#define DEBUG
-
 #ifndef __RF24NETWORK_H__
 #define __RF24NETWORK_H__
 

@@ -6,8 +6,6 @@
  version 2 as published by the Free Software Foundation.
  */
 
-//#define DEBUG 
- 
 #include "RF24Network_config.h"
 #include "RF24.h"
 #include "RF24Network.h"
@@ -60,6 +58,7 @@ bool RF24Network::update(void)
   // if there is data ready
   uint8_t pipe_num;
   boolean has_message=false;
+
   while ( radio.isValid() && radio.available(&pipe_num) )
   {
     // Dump the payloads until we've gotten everything
@@ -73,13 +72,8 @@ bool RF24Network::update(void)
       // Read the beginning of the frame as the header
       const RF24NetworkHeader& header = * reinterpret_cast<RF24NetworkHeader*>(frame_buffer);
 
-#ifdef DEBUG 
-//      IF_SERIAL_DEBUG(
-printf_P(PSTR("%lu: MAC Received on %u %s\n\r"),millis(),pipe_num,header.toString());
-//      IF_SERIAL_DEBUG(
-const uint16_t* i = reinterpret_cast<const uint16_t*>(frame_buffer + sizeof(RF24NetworkHeader));
-printf_P(PSTR("%lu: NET message %04x\n\r"),millis(),*i);
-#endif
+      IF_SERIAL_DEBUG(printf_P(PSTR("%lu: MAC Received on %u %s\n\r"),millis(),pipe_num,header.toString()));
+      IF_SERIAL_DEBUG(const uint16_t* i = reinterpret_cast<const uint16_t*>(frame_buffer + sizeof(RF24NetworkHeader));printf_P(PSTR("%lu: NET message %04x\n\r"),millis(),*i));
 
       // Throw it away if it's not a valid address
       if ( !is_valid_address(header.to_node) )
@@ -94,20 +88,20 @@ printf_P(PSTR("%lu: NET message %04x\n\r"),millis(),*i);
 	write(header.to_node);
 
       // NOT NEEDED anymore.  Now all reading pipes are open to start.
-//#if 0
+#if 0
       // If this was for us, from one of our children, but on our listening
       // pipe, it could mean that we are not listening to them.  If so, open up
       // and listen to their talking pipe
 
-//      if ( header.to_node == node_address && pipe_num == 0 && is_descendant(header.from_node) )
-//      {
-//	uint8_t pipe = pipe_to_descendant(header.from_node);
-//	radio.openReadingPipe(pipe,pipe_address(node_address,pipe));
+      if ( header.to_node == node_address && pipe_num == 0 && is_descendant(header.from_node) )
+      {
+	uint8_t pipe = pipe_to_descendant(header.from_node);
+	radio.openReadingPipe(pipe,pipe_address(node_address,pipe));
 
 	// Also need to open pipe 1 so the system can get the full 5-byte address of the pipe.
-//	radio.openReadingPipe(1,pipe_address(node_address,1));
- //     }
-//#endif
+	radio.openReadingPipe(1,pipe_address(node_address,1));
+      }
+#endif
     }
   }
   return has_message;
@@ -119,9 +113,7 @@ bool RF24Network::enqueue(void)
 {
   bool result = false;
   
-#ifdef DEBUG 
-  printf_P(PSTR("%lu: NET Enqueue @%x "),millis(),next_frame-frame_queue);
-#endif
+  IF_SERIAL_DEBUG(printf_P(PSTR("%lu: NET Enqueue @%x "),millis(),next_frame-frame_queue));
 
   // Copy the current frame into the frame queue
   if ( next_frame < frame_queue + sizeof(frame_queue) )
@@ -130,13 +122,11 @@ bool RF24Network::enqueue(void)
     next_frame += frame_size; 
 
     result = true;
-#ifdef DEBUG 
-    printf_P(PSTR("ok\n\r"));
+    IF_SERIAL_DEBUG(printf_P(PSTR("ok\n\r")));
   }
   else
   {
-    printf_P(PSTR("failed\n\r"));
-#endif
+    IF_SERIAL_DEBUG(printf_P(PSTR("failed\n\r")));
   }
 
   return result;
@@ -194,10 +184,7 @@ size_t RF24Network::read(RF24NetworkHeader& header,void* message, size_t maxlen)
       memcpy(message,frame+sizeof(RF24NetworkHeader),bufsize);
     }
 
-#ifdef DEBUG 
-//    IF_SERIAL_DEBUG(
-printf_P(PSTR("%lu: NET Received %s\n\r"),millis(),header.toString());
-#endif
+    IF_SERIAL_DEBUG(printf_P(PSTR("%lu: NET Received %s\n\r"),millis(),header.toString()));
   }
 
   return bufsize;
@@ -212,19 +199,15 @@ bool RF24Network::write(RF24NetworkHeader& header,const void* message, size_t le
 
   // Build the full frame to send
   memcpy(frame_buffer,&header,sizeof(RF24NetworkHeader));
-  if (len) 
+  if (len)
     memcpy(frame_buffer + sizeof(RF24NetworkHeader),message,min(frame_size-sizeof(RF24NetworkHeader),len));
 
-#ifdef DEBUG 
-
-//  IF_SERIAL_DEBUG(
-printf_P(PSTR("%lu: NET Sending %s\n\r"),millis(),header.toString());
-  if (len)   {
-//    IF_SERIAL_DEBUG(
-const uint16_t* i = reinterpret_cast<const uint16_t*>(message);
-printf_P(PSTR("%lu: NET message %04x\n\r"),millis(),*i);
+  IF_SERIAL_DEBUG(printf_P(PSTR("%lu: NET Sending %s\n\r"),millis(),header.toString()));
+  if (len)
+  {
+    IF_SERIAL_DEBUG(const uint16_t* i = reinterpret_cast<const uint16_t*>(message);printf_P(PSTR("%lu: NET message %04x\n\r"),millis(),*i));
   }
-#endif
+
 
   // If the user is trying to send it to himself
   if ( header.to_node == node_address )
@@ -271,10 +254,7 @@ bool RF24Network::write(uint16_t to_node)
     send_pipe = 0;
   }
   
-#ifdef DEBUG 
-//  IF_SERIAL_DEBUG(
-printf_P(PSTR("%lu: MAC Sending to 0%o via 0%o on pipe %x\n\r"),millis(),to_node,send_node,send_pipe);
-#endif
+  IF_SERIAL_DEBUG(printf_P(PSTR("%lu: MAC Sending to 0%o via 0%o on pipe %x\n\r"),millis(),to_node,send_node,send_pipe));
 
   // First, stop listening so we can talk
   radio.stopListening();
@@ -288,14 +268,14 @@ printf_P(PSTR("%lu: MAC Sending to 0%o via 0%o on pipe %x\n\r"),millis(),to_node
   while (!ok && retries--);
 
       // NOT NEEDED anymore.  Now all reading pipes are open to start.
-//#if 0
+#if 0
   // If we are talking on our talking pipe, it's possible that no one is listening.
   // If this fails, try sending it on our parent's listening pipe.  That will wake
   // it up, and next time it will listen to us.
 
-//  if ( !ok && send_node == parent_node )
-//    ok = write_to_pipe( parent_node, 0 );
-//#endif
+  if ( !ok && send_node == parent_node )
+    ok = write_to_pipe( parent_node, 0 );
+#endif
 
   // Now, continue listening
   radio.startListening();
@@ -322,10 +302,7 @@ bool RF24Network::write_to_pipe( uint16_t node, uint8_t pipe )
   }
   while ( !ok && --attempts );
 
-#ifdef DEBUG 
-//  IF_SERIAL_DEBUG(
-printf_P(PSTR("%lu: MAC Sent on %lx %S\n\r"),millis(),(uint32_t)out_pipe,ok?PSTR("ok"):PSTR("failed"));
-#endif
+  IF_SERIAL_DEBUG(printf_P(PSTR("%lu: MAC Sent on %lx %S\n\r"),millis(),(uint32_t)out_pipe,ok?PSTR("ok"):PSTR("failed")));
 
   return ok;
 }
@@ -396,8 +373,7 @@ void RF24Network::setup_address(void)
   }
   parent_pipe = i;
 
-#ifdef DEBUG 
-//#ifdef SERIAL_DEBUG
+#ifdef SERIAL_DEBUG
   printf_P(PSTR("setup_address node=0%o mask=0%o parent=0%o pipe=0%o\n\r"),node_address,node_mask,parent_node,parent_pipe);
 #endif
 }
@@ -472,11 +448,9 @@ uint64_t pipe_address( uint16_t node, uint8_t pipe )
     shift -= 4;
   }
 
-#ifdef DEBUG 
-  uint32_t* top = reinterpret_cast<uint32_t*>(out+1);
-  printf_P(PSTR("%lu: NET Pipe %i on node 0%o has address %lx%x\n\r"),millis(),pipe,node,*top,*out);
-#endif
+  IF_SERIAL_DEBUG(uint32_t* top = reinterpret_cast<uint32_t*>(out+1);printf_P(PSTR("%lu: NET Pipe %i on node 0%o has address %lx%x\n\r"),millis(),pipe,node,*top,*out));
 
   return result;
 }
 
+// vim:ai:cin:sts=2 sw=2 ft=cpp
