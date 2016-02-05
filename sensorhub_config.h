@@ -20,7 +20,7 @@ sensorhub_config.h ==> all global definitions go here
 // The radiochannel for the sensorhub
 #define RADIOCHANNEL 10
 // Transmission speed
-#define RADIOSPEED RF24_250KBPS
+#define RADIOSPEED RF24_1MBPS
 
 
 #endif // _SENSORHUB_CONFIG_H_

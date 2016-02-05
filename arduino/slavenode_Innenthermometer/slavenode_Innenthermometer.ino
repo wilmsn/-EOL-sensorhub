@@ -6,7 +6,7 @@ V3: Upgrade to Lowpower Library; display of a battery symbol
 // Define a valid radiochannel here
 #define RADIOCHANNEL 90
 // This node: Use octal numbers starting with "0": "041" is child 4 of node 1
-#define NODE 054
+#define NODE 044
 // The CE Pin of the Radio module
 #define RADIO_CE_PIN 10
 // The CS Pin of the Radio module
@@ -494,10 +494,11 @@ void draw_wait(byte x, byte y, int waitcount ) {
 }
 
 void loop(void) {
-  if (network.update()) {
-    network_busy = true;
-    networkuptime = 0;
-  } 
+//  if (network.update()) {
+//    network_busy = true;
+//    networkuptime = 0;
+//  }
+  network.update(); 
   if ( ! network_busy ) {
     // save energy get the temperature every 10. loop (with sleeptime 1min => every 10min)
     free_loop_counter++;

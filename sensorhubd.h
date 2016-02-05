@@ -61,15 +61,13 @@ ACTOTDATA and SENSORDATA joined to SENSORDATA.
 #include "sensorhub_config.h"
 #include "sensorhub_common.h"
 
-#include <bcm2835.h>
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
 #include <string> 
-#include <RF24.h>
-#include <RF24Network.h>
-//#include "../RF24/RF24.h"
-//#include "../RF24Network/RF24Network.h"
+#include <RF24/RF24.h>
+#include <RF24/utility/RPi/bcm2835.h>
+#include <RF24Network/RF24Network.h>
 #include <time.h>
 #include <sys/time.h>
 #include <stdio.h>
@@ -101,15 +99,15 @@ FILE * pidfile_ptr;
 FILE * logfile_ptr;
 
 // Setup for GPIO 25 CE and CE0 CSN with SPI Speed @ 8Mhz
-RF24 radio(RPI_V2_GPIO_P1_22, BCM2835_SPI_CS0, BCM2835_SPI_SPEED_1MHZ);  
+RF24 radio(RPI_V2_GPIO_P1_22, BCM2835_SPI_CS0, BCM2835_SPI_SPEED_8MHZ);  
 //RF24 radio(22,0,BCM2835_SPI_SPEED_1MHZ);
 
 RF24Network network(radio);
 
 // Structure of our payload
 struct payload_t {
-  uint16_t 	orderno;
-  char 		value[10];
+  uint16_t 	orderno;    // the orderno as primary key for our message for the nodes
+  char 		value[5];   // the information that is send to the node
 };
 payload_t payload;
 
@@ -117,11 +115,11 @@ uint16_t orderno;
 
 // Structure to handle the orderqueue
 struct order_t {
-  uint16_t 	     orderno;
-  uint16_t       to_node; 
-  unsigned char  channel; 
-  char			 name[30];
-  char 		     value[20];
+  uint16_t 	     orderno;     // the orderno as primary key for our message for the nodes
+  uint16_t       to_node;     // the destination node
+  unsigned char  channel;     // The channel to address the sensor
+  char			 name[30];    // The name of this sensor in FHEM 
+  char 		     value[5];    // the information that is send to the node
 };
 order_t order[7]; // we do not handle more than 6 orders (one per subnode 1...6) at one time
 
@@ -150,11 +148,9 @@ char err_finalize[]=ERRSTR "Could not finalize SQL statement";
 char err_opendb[]=ERRSTR "Opening database: " DBFILE " failed !!!!!";
 char err_opendbim[]=ERRSTR "Opening database: In Memory DB failed !!!!!";
 char msg_startup[]="Startup sensorhubd";
+uint16_t getnodeadr(char *node);
 
 long runtime(long starttime);
-
-
-uint16_t getnodeadr(char *node);
 
 void logmsg(int mesgloglevel, char *mymsg);
 
