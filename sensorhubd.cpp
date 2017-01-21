@@ -44,6 +44,18 @@ Get ready to use externel frontend and logic modul ==> FHEM
 => Trigger will be removed
 => Schedules will be removed
 
+ToDo:
+while ( network.available() )  {
+  RF24NetworkHeader header;
+  uint32_t time;
+  network.peek(header);
+  if(header.type == 'T'){
+    network.read(header,&time,sizeof(time));
+    Serial.print("Got time: ");
+    Serial.println(time);
+  }
+}
+==> einbau ermoeglicht unterschiedlichen Payload!
 
 
 

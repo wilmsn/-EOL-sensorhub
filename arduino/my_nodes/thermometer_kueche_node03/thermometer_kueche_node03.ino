@@ -225,7 +225,7 @@ void setup(void) {
   pinMode(VMESS_OUT, OUTPUT);  
   pinMode(VMESS_IN, INPUT);
   analogReference(INTERNAL);
-  digitalWrite(STATUSLED,STATUSLED_ON); 
+  digitalWrite(STATUSLED,STATUSLED_OFF); 
   SPI.begin();
   radio.begin();
   //****

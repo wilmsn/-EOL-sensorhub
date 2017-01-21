@@ -26,5 +26,5 @@ transmitter: transmitter.cpp
 	g++ ${CCFLAGS} -Wall -I../ -lrf24-bcm -lrf24network $^ -o $@
 
 clean:
-	rm -rf $(PROGRAMS)
+	rm -rf transmitter
 
