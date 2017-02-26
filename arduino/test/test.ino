@@ -1,23 +1,15 @@
 // Define a valid radiochannel here
 #define RADIOCHANNEL 90
 // This node: Use octal numbers starting with "0": "041" is child 4 of node 1
-#define NODE 033
-// Defaults for sleeptime1
-#define SLEEPTIME1 10
-// Defaults for sleeptime2
-#define SLEEPTIME2 10
-// Defaults for sleeptime3
-#define SLEEPTIME3 1
-// Defaults for sleeptime4
-#define SLEEPTIME4 2
+#define NODE 02
 // The CE Pin of the Radio module
-#define RADIO_CE_PIN 10 
+#define RADIO_CE_PIN 10
 // The CS Pin of the Radio module
 #define RADIO_CSN_PIN 9
 // The pin of the statusled
-#define STATUSLED 8
-#define STATUSLED_ON LOW
-#define STATUSLED_OFF HIGH
+#define STATUSLED 7
+#define STATUSLED_ON HIGH
+#define STATUSLED_OFF LOW
 
 // The outputpin for batterycontrol for the voltagedivider
 #define VMESS_OUT 5
@@ -25,54 +17,53 @@
 #define VMESS_IN A0
 // the divider to get the real voltage from ADC
 #define VOLTAGEDIVIDER 848
-#define VMESS_LICHT A2
-#define VMESS_SOLAR A1
 // How many cycles do we stay awake on network activity
-
-
+#define STAYAWAKEDEFAULT 20
 // ------ End of configuration part ------------
 
 #include <RF24Network.h>
 #include <RF24.h>
 #include <SPI.h>
-#include <sleeplib.h>
+// #include <sleeplib.h>
+#include <Wire.h>
+#include <BMP085.h>
+#include <JeeLib.h>  // Include library containing low power functions
 
-ISR(WDT_vect) { watchdogEvent(); }
+ISR(WDT_vect) { Sleepy::watchdogEvent(); } // Setup for low power waiting
+
+BMP085 bmp;
 
 // Structure of our payload
 struct payload_t
 {
   uint16_t orderno;
-  uint16_t seq; 
+  uint16_t seq;
   float value;
 };
 
-payload_t payload;    
+payload_t payload;
 
-enum radiomode_t { radio_sleep, radio_listen } radiomode;
+enum radiomode_t { radio_sleep, radio_listen } radiomode = radio_sleep;
 
 RF24NetworkHeader rxheader;
 RF24NetworkHeader txheader(0);
 // all sleeptime* values in seconds 
 // Time for the fist sleep after an activity of this node
-float sleeptime1 = SLEEPTIME1;
+float sleeptime1 = 60;
 // Time for the 2. to N. sleeploop
-float sleeptime2 = SLEEPTIME2;
+float sleeptime2 = 10;
 // Time to sleep after wakeup with radio on
-float sleeptime3 = SLEEPTIME3;
+float sleeptime3 = 1;
 // Time to keep the network up if it was busy
-float sleeptime4 = SLEEPTIME4;
+float sleeptime4 = 5;
 // The Voltagedivider - if you dont set it via channel 116 you will get the output of ADC
-float voltagedivider = VOLTAGEDIVIDER;
-float networkuptime = 0;
-// network got a message during this wakeup time
-bool network_has_message;
-// time in ms network was running without messages
-float network_freetime = 0;
-
+float voltagedivider = 1;
 unsigned int init_loop_counter = 0;
+unsigned int loop_counter = 0;
 boolean init_finished = false;
 boolean init_transmit = true;
+boolean network_busy = false;
+float networkuptime = 0;
 
 // Usage: radio(CE_pin, CS_pin)
 RF24 radio(RADIO_CE_PIN,RADIO_CSN_PIN);
@@ -80,28 +71,21 @@ RF24 radio(RADIO_CE_PIN,RADIO_CSN_PIN);
 // Network uses that radio
 RF24Network network(radio);
 
-
 void action_loop(void) {
-    network.read(rxheader,&payload,sizeof(payload));
     txheader.type=rxheader.type;
     switch (rxheader.type) {
       case 1:
         //****
         // insert here: payload.value=[result from sensor]
-        payload.value=read_solar(); 
-       break;
-      case 2:
-        //****
-        // insert here: payload.value=[result from sensor]
-        payload.value=read_licht(); 
        break;
       case 21:
         //****
         // insert here: action = payload.value
+        // Switch the StatusLED ON or OFF
         if ( payload.value > 0.5 ) {
-          digitalWrite(STATUSLED,STATUSLED_ON); 
+          digitalWrite(STATUSLED,STATUSLED_ON);
         } else {
-          digitalWrite(STATUSLED,STATUSLED_OFF); 
+          digitalWrite(STATUSLED,STATUSLED_OFF);
         }
        break;
       case 101:
@@ -136,105 +120,110 @@ void action_loop(void) {
       // init_finished (=1)
         init_finished = ( payload.value > 0.5);
         break;
+//      default:
+      // Default: just send the paket back - no action here  
     }
     network.write(txheader,&payload,sizeof(payload));
 }
 
-
 void setup(void) {
-  pinMode(STATUSLED, OUTPUT);     
-  pinMode(VMESS_OUT, OUTPUT);  
+  pinMode(STATUSLED, OUTPUT);
+  pinMode(VMESS_OUT, OUTPUT);
   pinMode(VMESS_IN, INPUT);
   analogReference(INTERNAL);
   SPI.begin();
   //****
   // put anything else to init here
   //****
+  Wire.begin();
+  bmp.begin();
 
   //####
   // end aditional init
   //####
   radio.begin();
   radio.setPALevel(RF24_PA_MAX);
-  radio.setAutoAck(true);
-//  radio.setRetries(2,15);
+  radio.setRetries(15,2);
   network.begin(RADIOCHANNEL, NODE);
   radio.setDataRate(RF24_250KBPS);
   digitalWrite(STATUSLED,STATUSLED_ON);
-  // initialisation begins
-  init_transmit=true;
-  init_loop_counter=0;
+  // initialisation beginns
   while ( ! init_finished ) {
-    if ( init_transmit ) {
+    if ( init_transmit && init_loop_counter < 1 ) {
       txheader.type=119;
       payload.orderno=0;
       payload.seq=0;
       payload.value=0;
       network.write(txheader,&payload,sizeof(payload));
+      init_loop_counter=10;
     }
     network.update();
     if ( network.available() ) {
+      network.read(rxheader,&payload,sizeof(payload));
       init_transmit=false;
+      init_loop_counter=0;
       action_loop();
     }
-    delay(100);
-    init_loop_counter++;
-    //just in case of initialisation does not work
-    //start with default values
-    if (init_loop_counter > 1000) init_finished=true;
+    delay(30);
+    init_loop_counter--;
+    //just in case of initialisation is interrupted
+    if (init_loop_counter < -1000) init_transmit=true;
   }
   delay(500);
   digitalWrite(STATUSLED,STATUSLED_OFF);
+  network_busy=true;
 }
 
 float read_battery_voltage(void) {
   int vmess;
   float voltage;
   digitalWrite(VMESS_OUT, HIGH);
-  delay(500);
+  Sleepy::loseSomeTime(250);
   vmess=analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
+  digitalWrite(VMESS_OUT, LOW);
   voltage = vmess / (5 * voltagedivider);
   return voltage;  
-}
-
-float read_solar(void) {
-  int vmess;
-  float voltage;
-  vmess=analogRead(VMESS_SOLAR);
-  vmess=vmess+analogRead(VMESS_SOLAR);
-  vmess=vmess+analogRead(VMESS_SOLAR);
-  vmess=vmess+analogRead(VMESS_SOLAR);
-  vmess=vmess+analogRead(VMESS_SOLAR);
-  voltage = vmess / (5 * voltagedivider);
-  return voltage;  
-}
-
-float read_licht(void) {
-  int vmess;
-  vmess=analogRead(VMESS_LICHT);
-  vmess=vmess+analogRead(VMESS_LICHT);
-  vmess=vmess+analogRead(VMESS_LICHT);
-  vmess=vmess+analogRead(VMESS_LICHT);
-  vmess=vmess+analogRead(VMESS_LICHT);
-  return vmess / 5;
 }
 
 void loop(void) {
-  if (network.update()) { network_freetime = 0; }
-  if ( network.available() ) { network_has_message = true; network_freetime = 0; action_loop(); }
-  if ( ( network_has_message && (network_freetime > sleeptime4) ) || ( (! network_has_message) && (network_freetime > sleeptime3) ) ) {
-    if ( radiomode == radio_sleep ) { radio.powerDown(); }
-    if (network_has_message) sleep4ms((unsigned int)(sleeptime1*1000)); else sleep4ms((unsigned int)(sleeptime2*1000));
-    if ( radiomode == radio_sleep ) { radio.powerUp(); radio.startListening(); }
-    sleep4ms(100);
-    network_freetime = 0.1;
-    network_has_message=false;
+  digitalWrite(STATUSLED,STATUSLED_ON);
+  if (network.update()) {
+    network_busy = true;
+    networkuptime = 0;
+  }
+  if ( ! network_busy ) {
+  //*****************
+  // Put anything you want to run frequently here
+  //*****************
+  
+  //#################
+  // END run frequently
+  //#################
+  }
+  if ( network.available() ) {
+    network_busy = true;
+    networkuptime = 0;
+    loop_counter = 0;
+    network.read(rxheader,&payload,sizeof(payload));
+    action_loop();
+  }
+  digitalWrite(STATUSLED,STATUSLED_OFF);
+  if (networkuptime > sleeptime4) {
+    network_busy=false;
+  }
+  if ( network_busy ) {
+    delay(250);
+    networkuptime=networkuptime+0.25;
   } else {
-    sleep4ms(100);
-    network_freetime=network_freetime+0.1;
+    if ( radiomode == radio_sleep ) radio.powerDown();
+    if (loop_counter == 0) Sleepy::loseSomeTime((unsigned int)(sleeptime1*1000)); else Sleepy::loseSomeTime((unsigned int)(sleeptime2*1000));
+    if ( radiomode == radio_sleep ) radio.powerUp();
+    Sleepy::loseSomeTime((unsigned int)(sleeptime3*1000));
+    loop_counter++;
+    if (loop_counter > 60000) loop_counter=1;
   }
 }

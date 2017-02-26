@@ -5,12 +5,15 @@
 #
 #######################################
 ID=`id | cut -d "=" -f 2 | cut -d "(" -f 1`
+DATESTR=$(date +%y%m%d)
 if [ $ID = 0 ]; then
   if [ -e /etc/init.d/sensorhub ]; then
     echo "Old installation found!"
     echo "Cleanup"
     echo "Stop sensorhub (if installed and running)"
     /etc/init.d/sensorhub stop
+    mv /usr/local/bin/sensorhubd /usr/local/bin/sensorhubd.${DATESTR}
+    chmod 644 /usr/local/bin/sensorhubd.${DATESTR}
     rm /etc/init.d/sensorhub
   fi
   if [ ! -d /var/database ]; then

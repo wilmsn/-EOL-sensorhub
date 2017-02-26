@@ -20,9 +20,9 @@
 // The Radiochannel we use
 #define RADIOCHANNEL 10
 // The CE Pin of the Radio module
-#define RADIO_CE_PIN 10
+#define RADIO_CE_PIN 9
 // The CS Pin of the Radio module
-#define RADIO_CSN_PIN 9
+#define RADIO_CSN_PIN 10
 
 #include <RF24Network.h>
 #include <RF24.h>
@@ -55,11 +55,48 @@ void setup(void)
   Serial.print("  other Node: ");
   Serial.println(BASENODE, OCT);
   Serial.println("---------------------------------------");
+//  radio.setDataRate(RF24_250KBPS);
+  radio.setPALevel(RF24_PA_MAX);
   radio.printDetails();                   // Dump the configuration of the rf unit for debugging
+  pinMode(10, HIGH);
 }
 
 void loop(void){
+  long int i=0;
+  int j=0;
+  i++;
   network.update();                  // Check the network regularly
+  if (i>1000) {
+    Serial.println("going power down ...");
+    radio.powerDown();
+    delay(1000);
+    radio.powerUp();
+    radio.startListening();
+    Serial.println("going power up ...");
+    i=1;
+    j++;
+  } 
+//  radio.powerDown();
+//  radio.powerUp();
+//  radio.begin();
+//  network.begin(RADIOCHANNEL, THISNODE);
+//  radio.setPALevel(RF24_PA_MAX);
+//  radio.startListening();
+//beginTransaction();
+//SPI.transfer(0xFF);
+//endTransaction();
+//radio.getDataRate();
+//  radio.isPVariant();
+//  radio.getCRCLength();
+//  radio.getPALevel();
+//  radio.printDetails();                   // Dump the configuration of the rf unit for debugging
+//  delay(100);
+//  radio.powerUp();
+//  delay(200);
+//  radio.startListening();
+//  radio.powerDown();
+//  radio.begin();
+//  network.begin(RADIOCHANNEL, THISNODE);
   while ( network.available() ) {     // Is there anything ready for us?
     RF24NetworkHeader header;        // If so, grab it and print it out
     payload_t payload;
@@ -75,6 +112,13 @@ void loop(void){
     header.to_node = BASENODE;
     header.from_node = THISNODE;
     network.write(header,&payload,sizeof(payload));
+    Serial.println("going power down ...");
+    radio.powerDown();
+    delay(10000);
+    radio.powerUp();
+    radio.startListening();
+    Serial.println("going power up ...");
+//    network.write(header,&payload,sizeof(payload));
   }
 }
 
