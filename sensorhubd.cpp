@@ -101,8 +101,9 @@ FILE * pidfile_ptr;
 FILE * logfile_ptr;
 
 // Setup for GPIO 25 CE and CE0 CSN with SPI Speed @ 8Mhz
-RF24 radio(RPI_V2_GPIO_P1_22, BCM2835_SPI_CS0, BCM2835_SPI_SPEED_1MHZ);  
+// RF24 radio(RPI_V2_GPIO_P1_22, BCM2835_SPI_CS0, BCM2835_SPI_SPEED_1MHZ);  
 //RF24 radio(22,0,BCM2835_SPI_SPEED_1MHZ);
+RF24 radio(25,0); 
 
 RF24Network network(radio);
 
@@ -474,6 +475,16 @@ void store_actor_value(uint16_t job, uint16_t seq, float value) {
 	do_sql(sql_stmt);
 }
 
+void store_node_signal_quality(uint16_t node, bool goodSignal) {
+	char sql_stmt[100];
+    if (goodSignal) {
+		sprintf(sql_stmt,"update node set signal_quality = 'Strong signal > 64dBm' where node_id = '0%o'", node);
+	} else {
+		sprintf(sql_stmt,"update node set signal_quality = 'Weak signal < 64dBm' where node_id = '0%o'", node);
+	}
+	do_sql(sql_stmt);
+}
+
 void sighandler(int signal) {
     char debug[80];
 	sprintf(debug, "\nSIGTERM: Shutting down ...");
@@ -681,7 +692,9 @@ int main(int argc, char* argv[]) {
 //
 // Receive loop: react on the message from the nodes
 //
+			bool goodSignal = radio.testRPD();    
 			network.read(rxheader,&payload,sizeof(payload));
+            store_node_signal_quality(rxheader.from_node, goodSignal);
 			sprintf(debug, DEBUGSTR "Received: Channel: %u from Node: %o to Node: %o Job %d Seq %d Value %f "
 						, rxheader.type, rxheader.from_node, rxheader.to_node, payload.Job, payload.seq, payload.value);
 			logmsg(7, debug);
