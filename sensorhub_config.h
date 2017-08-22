@@ -8,7 +8,7 @@ sensorhub_config.h ==> all global definitions go here
 
 
 
-#define DBFILE "/var/database/sensorhub.db"
+#define DBFILE "/var/database/sensorhub_dev.db"
 #define DBIMFILE ":memory:"
 //#define DBIMFILE "memory.db"
 //#define DBFILE "/home/norbert/entw/sensorhub/sensorhub_neu.db"

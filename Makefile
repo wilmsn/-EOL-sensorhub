@@ -39,7 +39,7 @@ database:
 
 # clear build files
 clean:
-	rm sensorhubd sensorhub.db
+	rm sensorhubd
 
 # Install the sensorhub
 install: 

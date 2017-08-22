@@ -3,9 +3,9 @@
 // This node: Use octal numbers starting with "0": "041" is child 4 of node 1
 #define NODE 03
 // The CE Pin of the Radio module
-#define RADIO_CE_PIN 10
+#define RADIO_CE_PIN 9
 // The CS Pin of the Radio module
-#define RADIO_CSN_PIN 9
+#define RADIO_CSN_PIN 10
 // The pin of the statusled
 #define STATUSLED A2
 #define STATUSLED_ON HIGH
@@ -24,10 +24,8 @@
 #include <RF24Network.h>
 #include <RF24.h>
 #include <SPI.h>
-#include <sleeplib.h>
 #include "printf.h"
 
-ISR(WDT_vect) { watchdogEvent(); }
 
 // Structure of our payload
 struct payload_t {
@@ -68,7 +66,6 @@ float read_battery_voltage(void) {
   int vmess;
   float voltage;
   digitalWrite(VMESS_OUT, HIGH);
-  sleep4ms(250);
   vmess=analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
@@ -129,11 +126,6 @@ void action_loop(void) {
 }
 
 void setup(void) {
-  pinMode(STATUSLED, OUTPUT);
-  pinMode(VMESS_OUT, OUTPUT);
-  pinMode(VMESS_IN, INPUT);
-  analogReference(INTERNAL);
-//  Serial.begin(9600);
   Serial.begin(57600);
   Serial.println("Programstart");
   printf_begin();
@@ -149,78 +141,15 @@ void setup(void) {
 //  radio.setPALevel(RF24_PA_MAX);
 //  radio.setRetries(15,2);
   network.begin(RADIOCHANNEL, NODE);
+  radio.setDataRate(RF24_1MBPS);
   radio.printDetails();
-  radio.setDataRate(RF24_250KBPS);
-  digitalWrite(STATUSLED,STATUSLED_ON);
-  // initialisation beginns
-  while ( ! init_finished ) {
-    if ( init_transmit && init_loop_counter < 1 ) {
-      txheader.type=119;
-      payload.orderno=0;
-//      payload.value=0;
-      network.write(txheader,&payload,sizeof(payload));
-      Serial.println("Paket gesendet");
-      radio.printDetails();
-      init_loop_counter=10;
-    }
-    Serial.println(network.update());
-    if ( network.available() ) {
-      network.read(rxheader,&payload,sizeof(payload));
-      Serial.println("Paket empfangen");
-      Serial.print("Typ=");
-      Serial.print(rxheader.type);
-      Serial.println(" ");
-      init_transmit=false;
-      init_loop_counter=0;
-      action_loop();
-    }
-    delay(300);
-    init_loop_counter--;
-    //just in case of initialisation is interrupted
-    if (init_loop_counter < -1000) init_transmit=true;
-  }
   delay(500);
-  digitalWrite(STATUSLED,STATUSLED_OFF);
-  network_busy=true;
 }
 
 
 void loop(void) {
-  digitalWrite(STATUSLED,STATUSLED_ON);
   network.update();
-  //{
-  //  network_busy = true;
-  //  networkuptime = 0;
-  //}
-  //if ( ! network_busy ) {
-  //*****************
-  // Put anything you want to run frequently here
-  //*****************
-  
-  //#################
-  // END run frequently
-  //#################
-  //}
-  //if ( network.available() ) {
-  //  network_busy = true;
-  //  networkuptime = 0;
-  //  loop_counter = 0;
-  //  network.read(rxheader,&payload,sizeof(payload));
-  //  action_loop();
-  //}
-  digitalWrite(STATUSLED,STATUSLED_OFF);
-  if (networkuptime > sleeptime4) {
-    network_busy=false;
-  }
-  if ( network_busy ) {
-    sleep4ms(250);
-    networkuptime=networkuptime+0.25;
-  } else {
-    if ( radiomode == radio_sleep ) radio.powerDown();
-    if (loop_counter == 0) sleep4ms((unsigned int)(sleeptime1*1000)); else sleep4ms((unsigned int)(sleeptime2*1000));
-    if ( radiomode == radio_sleep ) radio.powerUp();
-    sleep4ms((unsigned int)(sleeptime3*1000));
-    loop_counter++;
-    if (loop_counter > 60000) loop_counter=1;
-  }
+  delay(1);
+  Serial.println("Now transmitting... ");
+  network.write(txheader,&payload,sizeof(payload));
 }

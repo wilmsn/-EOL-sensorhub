@@ -3,24 +3,10 @@ sensorhub.cpp
 A unix-deamon to handle and store the information from/to all connected sensornodes. 
 All information is stored in a SQLite3 database.
 
-Version history:
-V0.1: 
-Initial Version
-Node sends its information activ to the master
-Master is only receiver
-V0.2:
-Changed the delivery
+Features:
 Master takes control over everything
 Node wakes up in a defined interval and listens into the network for something to do
-Database structure changed - not comüatible with V0.1 
-V0.3:
-Small changes in database structure
-Added Web-GUI (German only)
-V0.4:
-Database structure changed and extended - not compatible with V0.3 
-Added actors
-V0.5
-Different start modes:
+start modes:
 ./sensorhubd --help => for help
 ./sensorhubd => start in shell with detailed logging
 ./sensorhubd -d => starts as a daemon
@@ -138,6 +124,7 @@ sqlite3 *dbim;
 
 RF24NetworkHeader rxheader;
 RF24NetworkHeader txheader;
+uint8_t radiochannel = RADIOCHANNEL;
 
 char buffer1[50];
 char buffer2[50];
@@ -148,6 +135,7 @@ char err_finalize[]=ERRSTR "Could not finalize SQL statement";
 char err_opendb[]=ERRSTR "Opening database: " DBFILE " failed !!!!!";
 char err_opendbim[]=ERRSTR "Opening database: In Memory DB failed !!!!!";
 char msg_startup[]="Startup sensorhubd";
+char createDB1[]="create table orderque";
 uint16_t getnodeadr(char *node);
 
 long runtime(long starttime);
