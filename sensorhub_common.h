@@ -5,12 +5,19 @@
 using namespace std;
 
 // Structure for incoming messages from other programms (like PHP)
+/*struct mesg_buf_t {
+    short mtype;
+    char  name[30];
+	char  value[20];
+    short prio;	
+}; */
+
 struct mesg_buf_t {
     short mtype;
     char  name[30];
 	char  value[20];
     short prio;	
-};
+}; 
 
 mesg_buf_t mesg_buf;
 int msqid;
