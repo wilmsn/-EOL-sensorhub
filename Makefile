@@ -14,7 +14,9 @@
 PREFIX=/usr/local
 EXECDIR=${PREFIX}/bin
 INCLUDEDIR=${PREFIX}/include
-SQLITE3DIR=/usr/include
+#SQLITE3DIR=/usr/include
+#MYSQLDIR=/usr/include/mysql
+MYSQLLIBS := $(shell mysql_config --libs) 
 
 ARCH=armv6zk
 ifeq "$(shell uname -m)" "armv7l"
@@ -31,7 +33,7 @@ all: sensorhubd
 
 # Make the sensorhub deamon
 sensorhubd: sensorhubd.cpp
-	g++ ${CCFLAGS} -Wall -I ${INCLUDEDIR} -I ${SQLITE3DIR} -lrf24-bcm -lrf24network -lsqlite3 $^ -o $@
+	g++ ${CCFLAGS} -Wall -I ${INCLUDEDIR} -lrf24-bcm -lrf24network ${MYSQLLIBS} $^ -o $@
 
 # Make the database
 database:
