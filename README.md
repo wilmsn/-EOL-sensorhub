@@ -1,7 +1,8 @@
 sensorhub
 =========
 
-Still in an early state ... but working
+This project is END OF LIFE !!!!!!!!!!!!!!!!!!!!!
+It will be continued with different scope in RF24Hub.
 
 For documentation goto http://wilmsn.github.io/sensorhub/
 
