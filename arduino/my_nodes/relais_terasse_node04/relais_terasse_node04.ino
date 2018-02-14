@@ -1,34 +1,27 @@
 // Define a valid radiochannel here
 #define RADIOCHANNEL 90
 // This node: Use octal numbers starting with "0": "041" is child 4 of node 1
-#define NODE 033
-// Defaults for sleeptime1
-#define SLEEPTIME1 10
-// Defaults for sleeptime2
-#define SLEEPTIME2 10
-// Defaults for sleeptime3
-#define SLEEPTIME3 1
-// Defaults for sleeptime4
-#define SLEEPTIME4 2
-// The CE Pin of the Radio module
-#define RADIO_CE_PIN 10 
+#define NODE 04
+// Sleeptime during the loop in ms -> if 0 ATMega always busy
+#define RADIO_CE_PIN 10
 // The CS Pin of the Radio module
 #define RADIO_CSN_PIN 9
 // The pin of the statusled
-#define STATUSLED 8
-#define STATUSLED_ON LOW
-#define STATUSLED_OFF HIGH
+//#define STATUSLED A2
+#define STATUSLED A2
+#define STATUSLED_ON HIGH
+#define STATUSLED_OFF LOW
+// The pin of the relais
+#define RELAIS1 4
+#define RELAIS2 5
+#define RELAIS_ON LOW
+#define RELAIS_OFF HIGH
 
 // The outputpin for batterycontrol for the voltagedivider
 #define VMESS_OUT 5
 // The inputpin for batterycontrol
 #define VMESS_IN A0
-// the divider to get the real voltage from ADC
-#define VOLTAGEDIVIDER 848
-#define VMESS_LICHT A2
-#define VMESS_SOLAR A1
-// How many cycles do we stay awake on network activity
-
+// Sleeptime when network is busy
 
 // ------ End of configuration part ------------
 
@@ -43,32 +36,34 @@ ISR(WDT_vect) { watchdogEvent(); }
 struct payload_t
 {
   uint16_t orderno;
-  uint16_t seq; 
+  uint16_t seq;
   float value;
 };
 
-payload_t payload;    
+payload_t payload;
 
-enum radiomode_t { radio_sleep, radio_listen } radiomode;
+enum radiomode_t { radio_sleep, radio_listen } radiomode = radio_sleep;
 
 RF24NetworkHeader rxheader;
 RF24NetworkHeader txheader(0);
 // all sleeptime* values in seconds 
+// defaults only 
+// real values will be transmitted from the server
+//
 // Time for the fist sleep after an activity of this node
-float sleeptime1 = SLEEPTIME1;
+float sleeptime1 = 1;
 // Time for the 2. to N. sleeploop
-float sleeptime2 = SLEEPTIME2;
+float sleeptime2 = 1;
 // Time to sleep after wakeup with radio on
-float sleeptime3 = SLEEPTIME3;
+float sleeptime3 = 1;
 // Time to keep the network up if it was busy
-float sleeptime4 = SLEEPTIME4;
+float sleeptime4 = 1;
 // The Voltagedivider - if you dont set it via channel 116 you will get the output of ADC
-float voltagedivider = VOLTAGEDIVIDER;
-float networkuptime = 0;
+float voltagedivider = 1;
 // network got a message during this wakeup time
 bool network_has_message;
 // time in ms network was running without messages
-float network_freetime = 0;
+float network_freetime;
 
 unsigned int init_loop_counter = 0;
 boolean init_finished = false;
@@ -80,7 +75,6 @@ RF24 radio(RADIO_CE_PIN,RADIO_CSN_PIN);
 // Network uses that radio
 RF24Network network(radio);
 
-
 void action_loop(void) {
     network.read(rxheader,&payload,sizeof(payload));
     txheader.type=rxheader.type;
@@ -88,20 +82,29 @@ void action_loop(void) {
       case 1:
         //****
         // insert here: payload.value=[result from sensor]
-        payload.value=read_solar(); 
-       break;
-      case 2:
-        //****
-        // insert here: payload.value=[result from sensor]
-        payload.value=read_licht(); 
        break;
       case 21:
+        if ( payload.value > 0.5 ) {
+          digitalWrite(RELAIS1, RELAIS_ON);
+        } else {
+          digitalWrite(RELAIS1, RELAIS_OFF);
+        }
+       break;
+      case 22:
+        if ( payload.value > 0.5 ) {
+          digitalWrite(RELAIS2, RELAIS_ON);
+        } else {
+          digitalWrite(RELAIS2, RELAIS_OFF);
+        }
+       break;
+      case 31:
         //****
         // insert here: action = payload.value
+        // Switch the StatusLED ON or OFF
         if ( payload.value > 0.5 ) {
-          digitalWrite(STATUSLED,STATUSLED_ON); 
+          digitalWrite(STATUSLED,STATUSLED_ON);
         } else {
-          digitalWrite(STATUSLED,STATUSLED_OFF); 
+          digitalWrite(STATUSLED,STATUSLED_OFF);
         }
        break;
       case 101:
@@ -136,30 +139,27 @@ void action_loop(void) {
       // init_finished (=1)
         init_finished = ( payload.value > 0.5);
         break;
+//      default:
+      // Default: just send the paket back - no action here  
     }
     network.write(txheader,&payload,sizeof(payload));
 }
 
-
 void setup(void) {
-  pinMode(STATUSLED, OUTPUT);     
-  pinMode(VMESS_OUT, OUTPUT);  
+  pinMode(STATUSLED, OUTPUT);
+  pinMode(VMESS_OUT, OUTPUT);
   pinMode(VMESS_IN, INPUT);
   analogReference(INTERNAL);
   SPI.begin();
-  //****
-  // put anything else to init here
-  //****
-
-  //####
-  // end aditional init
-  //####
+  pinMode(RELAIS1, OUTPUT);
+  pinMode(RELAIS2, OUTPUT);
+  digitalWrite(RELAIS1,RELAIS_ON);
+  digitalWrite(RELAIS2,RELAIS_OFF);
   radio.begin();
-  radio.setPALevel(RF24_PA_MAX);
-  radio.setAutoAck(true);
-//  radio.setRetries(2,15);
   network.begin(RADIOCHANNEL, NODE);
   radio.setDataRate(RF24_250KBPS);
+  radio.setPALevel(RF24_PA_MAX);
+  // initialisation beginns
   digitalWrite(STATUSLED,STATUSLED_ON);
   // initialisation begins
   init_transmit=true;
@@ -182,45 +182,24 @@ void setup(void) {
     //just in case of initialisation does not work
     //start with default values
     if (init_loop_counter > 1000) init_finished=true;
-  }
-  delay(500);
+  }  
   digitalWrite(STATUSLED,STATUSLED_OFF);
+  digitalWrite(RELAIS1,RELAIS_OFF);
 }
 
 float read_battery_voltage(void) {
   int vmess;
   float voltage;
   digitalWrite(VMESS_OUT, HIGH);
-  delay(500);
+  sleep4ms(250);
   vmess=analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
+  digitalWrite(VMESS_OUT, LOW);
   voltage = vmess / (5 * voltagedivider);
   return voltage;  
-}
-
-float read_solar(void) {
-  int vmess;
-  float voltage;
-  vmess=analogRead(VMESS_SOLAR);
-  vmess=vmess+analogRead(VMESS_SOLAR);
-  vmess=vmess+analogRead(VMESS_SOLAR);
-  vmess=vmess+analogRead(VMESS_SOLAR);
-  vmess=vmess+analogRead(VMESS_SOLAR);
-  voltage = vmess / (5 * voltagedivider);
-  return voltage;  
-}
-
-float read_licht(void) {
-  int vmess;
-  vmess=analogRead(VMESS_LICHT);
-  vmess=vmess+analogRead(VMESS_LICHT);
-  vmess=vmess+analogRead(VMESS_LICHT);
-  vmess=vmess+analogRead(VMESS_LICHT);
-  vmess=vmess+analogRead(VMESS_LICHT);
-  return vmess / 5;
 }
 
 void loop(void) {

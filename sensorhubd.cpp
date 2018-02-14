@@ -44,6 +44,18 @@ Get ready to use externel frontend and logic modul ==> FHEM
 => Trigger will be removed
 => Schedules will be removed
 
+ToDo:
+while ( network.available() )  {
+  RF24NetworkHeader header;
+  uint32_t time;
+  network.peek(header);
+  if(header.type == 'T'){
+    network.read(header,&time,sizeof(time));
+    Serial.print("Got time: ");
+    Serial.println(time);
+  }
+}
+==> einbau ermoeglicht unterschiedlichen Payload!
 
 
 
@@ -55,7 +67,7 @@ Get ready to use externel frontend and logic modul ==> FHEM
 #define PIDFILE "/var/run/sensorhubd.pid"
 #define ERRSTR "ERROR: "
 #define DEBUGSTR "Debug: "
-#define RADIOCHANNEL 90
+#define RADIOCHANNEL 10
 /////#define MSG_KEY 4711
 
 //--------- End of global define -----------------
@@ -101,8 +113,9 @@ FILE * pidfile_ptr;
 FILE * logfile_ptr;
 
 // Setup for GPIO 25 CE and CE0 CSN with SPI Speed @ 8Mhz
-RF24 radio(RPI_V2_GPIO_P1_22, BCM2835_SPI_CS0, BCM2835_SPI_SPEED_1MHZ);  
+// RF24 radio(RPI_V2_GPIO_P1_22, BCM2835_SPI_CS0, BCM2835_SPI_SPEED_1MHZ);  
 //RF24 radio(22,0,BCM2835_SPI_SPEED_1MHZ);
+RF24 radio(25,0); 
 
 RF24Network network(radio);
 
@@ -474,6 +487,16 @@ void store_actor_value(uint16_t job, uint16_t seq, float value) {
 	do_sql(sql_stmt);
 }
 
+void store_node_signal_quality(uint16_t node, bool goodSignal) {
+	char sql_stmt[100];
+    if (goodSignal) {
+		sprintf(sql_stmt,"update node set signal_quality = 'Strong signal > 64dBm' where node_id = '0%o'", node);
+	} else {
+		sprintf(sql_stmt,"update node set signal_quality = 'Weak signal < 64dBm' where node_id = '0%o'", node);
+	}
+	do_sql(sql_stmt);
+}
+
 void sighandler(int signal) {
     char debug[80];
 	sprintf(debug, "\nSIGTERM: Shutting down ...");
@@ -484,19 +507,22 @@ void sighandler(int signal) {
 }
 
 void usage(const char *prgname) {
-	fprintf(stdout, "Usage: %s <option>\n", prgname); 
-	fprintf(stdout, "with options: \n");
-	fprintf(stdout, "   -h or --help \n");
-	fprintf(stdout, "         Print help\n");
-	fprintf(stdout, "   -d or --daemon\n");
+    fprintf(stdout, "Usage: %s <option>\n", prgname); 
+    fprintf(stdout, "with options: \n");
+    fprintf(stdout, "   -h or --help \n");
+    fprintf(stdout, "         Print help\n");
+    fprintf(stdout, "   -v or --verbose \n");
+    fprintf(stdout, "         Verboselevel 0...9 \n");
+    fprintf(stdout, "   -r or --radiochannel 0...125 \n");
+    fprintf(stdout, "   -d or --daemon\n");
     fprintf(stdout, "         Start as daemon\n");
-	fprintf(stdout, "   -n or --hostname\n");
+    fprintf(stdout, "   -n or --hostname\n");
     fprintf(stdout, "         Set hostname for telnet connection\n");
-	fprintf(stdout, "   -p or --port\n");
+    fprintf(stdout, "   -p or --port\n");
     fprintf(stdout, "         Set port for telnet connection\n");
-	fprintf(stdout, "   -l <logfilename>  or --logfile <logfilename> \n");
+    fprintf(stdout, "   -l <logfilename>  or --logfile <logfilename> \n");
     fprintf(stdout, "         Write log to logfile\n");
-	fprintf(stdout, "For clean exit use \"CTRL-C\" or \"kill -15 <pid>\"\n\n");  
+    fprintf(stdout, "For clean exit use \"CTRL-C\" or \"kill -15 <pid>\"\n\n");  
 }
 
 int main(int argc, char* argv[]) {
@@ -506,6 +532,7 @@ int main(int argc, char* argv[]) {
 	int init_jobno = 1;
 	int c;
 	long starttime=time(0);
+	uint8_t radiochannel=RADIOCHANNEL;
 	// check if started as root
 	if ( getuid()!=0 ) {
            fprintf(stdout, "sensorhubd has to be startet as user root\n");
@@ -516,6 +543,7 @@ int main(int argc, char* argv[]) {
 		static struct option long_options[] =
 			{	{"daemon",  no_argument, 0, 'd'},
 				{"verbose",  required_argument, 0, 'v'},
+				{"radiochannel", required_argument, 0, 'r'},
 				{"logfile",    required_argument, 0, 'l'},
 				{"hostname",    required_argument, 0, 'n'},
 				{"port",    required_argument, 0, 'p'},
@@ -523,15 +551,18 @@ int main(int argc, char* argv[]) {
 				{0, 0, 0, 0} };
            /* getopt_long stores the option index here. */
 		int option_index = 0;
-		c = getopt_long (argc, argv, "?dhv:l:n:p:",long_options, &option_index);
+		c = getopt_long (argc, argv, "?dhv:r:l:n:p:",long_options, &option_index);
 		/* Detect the end of the options. */
 		if (c == -1) break;
 		switch (c) {
 			case 'd':
-            start_daemon = true;
+            			start_daemon = true;
 			break;
-            case 'v':
+           		case 'v':
 				verboselevel = (optarg[0] - '0') * 1;
+			break;
+			case 'r':
+				radiochannel = atoi(optarg);
 			break;
 			case 'l':
 				strcpy(logfilename, optarg);
@@ -646,9 +677,9 @@ int main(int argc, char* argv[]) {
 	logmsg(1, debug);
 	radio.begin();
 	delay(5);
-	sprintf(debug, "starting network... \n");
+	sprintf(debug, "starting network on channel %d ... \n", radiochannel);
 	logmsg(1, debug);
-	network.begin( RADIOCHANNEL, 0);
+	network.begin( radiochannel, 0);
 	radio.setDataRate(RF24_250KBPS);
     if (verboselevel > 5) {
 		sprintf(debug,"\n\n");
@@ -681,7 +712,9 @@ int main(int argc, char* argv[]) {
 //
 // Receive loop: react on the message from the nodes
 //
+			bool goodSignal = radio.testRPD();    
 			network.read(rxheader,&payload,sizeof(payload));
+            store_node_signal_quality(rxheader.from_node, goodSignal);
 			sprintf(debug, DEBUGSTR "Received: Channel: %u from Node: %o to Node: %o Job %d Seq %d Value %f "
 						, rxheader.type, rxheader.from_node, rxheader.to_node, payload.Job, payload.seq, payload.value);
 			logmsg(7, debug);

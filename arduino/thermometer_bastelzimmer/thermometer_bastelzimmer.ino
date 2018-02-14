@@ -1,21 +1,21 @@
 /*
 A thermometer for inside.
-V3: Upgrade to Sleeplib Library; display of a battery symbol
+V3: Upgrade to Lowpower Library; display of a battery symbol
 
 */
 // Define a valid radiochannel here
 #define RADIOCHANNEL 90
 // This node: Use octal numbers starting with "0": "041" is child 4 of node 1
-#define NODE 03
+#define NODE 013
+// The CE Pin of the Radio module
 // Defaults for sleeptime1
 #define SLEEPTIME1 10
 // Defaults for sleeptime2
 #define SLEEPTIME2 10
 // Defaults for sleeptime3
-#define SLEEPTIME3 1
+#define SLEEPTIME3 10
 // Defaults for sleeptime4
-#define SLEEPTIME4 2
-// The CE Pin of the Radio module
+#define SLEEPTIME4 10
 #define RADIO_CE_PIN 10
 // The CS Pin of the Radio module
 #define RADIO_CSN_PIN 9
@@ -26,7 +26,7 @@ V3: Upgrade to Sleeplib Library; display of a battery symbol
 #define ONE_WIRE_BUS 8
 
 // The outputpin for batterycontrol for the voltagedivider
-#define VMESS_OUT 1
+#define VMESS_OUT A3
 #define VMESS_IN A0
 // 4 voltages for the battery (empty ... full)
 #define U0 3.5
@@ -34,8 +34,8 @@ V3: Upgrade to Sleeplib Library; display of a battery symbol
 #define U2 3.7
 #define U3 3.8
 #define U4 3.9
-// the divider to get the real voltage from ADC
-#define VOLTAGEDIVIDER 848
+// How many cycles do we stay awake on network activity
+#define STAYAWAKEDEFAULT 20
 // set X0 and Y0 of battery symbol ( is 10 * 5 pixel )
 #define BATT_X0 74
 #define BATT_Y0 0
@@ -48,6 +48,8 @@ V3: Upgrade to Sleeplib Library; display of a battery symbol
 // set X0 and Y0 of waiting symbol ( is 6 * 6 pixel )
 #define WAIT_X0 78
 #define WAIT_Y0 17
+// Sleeptime when network is busy
+#define NETWORK_BUSY_SLEEPTIME_MS 500
 
 // ------ End of configuration part ------------
 
@@ -103,16 +105,16 @@ float sleeptime3 = SLEEPTIME3;
 // Time to keep the network up if it was busy
 float sleeptime4 = SLEEPTIME4;
 unsigned int init_loop_counter = 0;
+unsigned int loop_counter = 0;
 boolean init_finished = false;
 boolean init_transmit = true;
+boolean network_busy = false;
 boolean display_down = false;
 boolean low_voltage_flag = false;
-// network got a message during this wakeup time
-bool network_has_message;
-// time in ms network was running without messages
-float network_freetime;
+float networkuptime = 0;
 float temp;
-float voltagedivider = VOLTAGEDIVIDER;
+float voltagedivider = 1;
+int free_loop_counter = 0;
 //Some Var for restore after sleep of display
 float field1_val, field2_val, field3_val, field4_val;
 float cur_voltage;
@@ -142,12 +144,12 @@ void display_sleep(boolean dmode) {
 }
 
 void action_loop(void) {
-    network.read(rxheader,&payload,sizeof(payload));
     txheader.type=rxheader.type;
     switch (rxheader.type) {
       case 1: {
         // Temperature
         payload.value=get_temp();
+        free_loop_counter = 0;
        break; }
       case 21:
         // Set field 1
@@ -220,7 +222,6 @@ void action_loop(void) {
 }  
 
 void setup(void) {
-  display_down=false;
   pinMode(STATUSLED, OUTPUT);     
   pinMode(VMESS_OUT, OUTPUT);  
   pinMode(VMESS_IN, INPUT);
@@ -236,39 +237,40 @@ void setup(void) {
   myGLCD.clrScr();
   sensors.begin(); 
   get_temp();
-  draw_antenna(ANT_X0, ANT_Y0);
   cur_voltage=read_battery_voltage();
   draw_battery(BATT_X0, BATT_Y0,cur_voltage);
   //####
   // end aditional init
   //####
   network.begin(RADIOCHANNEL, NODE);
-  radio.setDataRate(RF24_250KBPS);
-//  radio.setRetries(15,2); // delay 4000us, 2 retries
+  radio.setDataRate( RF24_250KBPS );
+  radio.setPALevel( RF24_PA_MAX ) ;
   // initialisation beginns
   while ( ! init_finished ) {
-    if ( init_transmit ) {
+    if ( init_transmit && init_loop_counter < 1 ) {
       txheader.type=119;
       payload.orderno=0;
       payload.seq=0;
       payload.value=0;
       network.write(txheader,&payload,sizeof(payload));
-      delay(300);
+      init_loop_counter=10;
     }
     network.update();
     if ( network.available() ) {
+      network.read(rxheader,&payload,sizeof(payload));
       init_transmit=false;
+      init_loop_counter=0;
       action_loop(); 
     }
-    delay(100);
-    init_loop_counter++;
+    delay(30);
+    init_loop_counter--;
     //just in case of initialisation is interrupted
-    if (init_loop_counter > 1000) init_finished=true;
+    if (init_loop_counter < -1000) init_transmit=true;
   }
-  network_has_message=true;
-  network_freetime = 0;
-  display_down=false;
   digitalWrite(STATUSLED,STATUSLED_OFF); 
+  network_busy=true;
+  display_down=false;
+  draw_antenna(ANT_X0, ANT_Y0);
 }
 
 void draw_therm(byte x, byte y) {
@@ -502,24 +504,42 @@ void draw_wait(byte x, byte y, int waitcount ) {
 }
 
 void loop(void) {
-  if ( network.update() ) { network_freetime = 0; }
-  if ( network.available() ) { network_has_message = true; network_freetime = 0; action_loop(); }
-  if ( ( network_has_message && (network_freetime > sleeptime4) ) || ( (! network_has_message) && (network_freetime > sleeptime3) ) ) {
-    if ( radiomode == radio_sleep ) { wipe_antenna(ANT_X0, ANT_Y0); radio.powerDown(); }
-    if (network_has_message) sleep4ms((unsigned int)(sleeptime1*1000)); else sleep4ms((unsigned int)(sleeptime2*1000));
-    if ( radiomode == radio_sleep ) { radio.powerUp(); radio.startListening(); draw_antenna(ANT_X0, ANT_Y0); }
-  //*****************
-  // Put anything you want to run frequently here
-  //*****************
-    get_temp();
-  //#################
-  // END run frequently
-  //#################
-    sleep4ms(100);
-    network_freetime = 0.1;
-    network_has_message=false;
+  if (network.update()) {
+    network_busy = true;
+    networkuptime = 0;
+  }
+  if ( network.available() ) {
+    network.read(rxheader,&payload,sizeof(payload));
+    action_loop();
+    network_busy = true;
+    networkuptime = 0;
+    loop_counter = 0;
+  }
+  if (networkuptime > sleeptime4) {
+    network_busy=false;
+  }
+  if ( network_busy ) {
+    sleep4ms(NETWORK_BUSY_SLEEPTIME_MS);
+    networkuptime=networkuptime+(NETWORK_BUSY_SLEEPTIME_MS/1000.0);
   } else {
-    sleep4ms(50);
-    network_freetime=network_freetime+0.1;
+    // save energy get the temperature every 5. loop (with sleeptime 1min => every 5min)
+    free_loop_counter++;
+    if (free_loop_counter % 5 == 0) get_temp();
+    if ( sleeptime1 > 0.01 ) {
+      if ( radiomode == radio_sleep ) {
+        radio.powerDown();
+        wipe_antenna(ANT_X0, ANT_Y0);
+      }
+      if (loop_counter == 0) sleep4ms((unsigned int)(sleeptime1*1000)); else sleep4ms((unsigned int)(sleeptime2*1000));
+      if ( radiomode == radio_sleep ) {
+        radio.powerUp();
+        radio.startListening();
+        draw_antenna(ANT_X0, ANT_Y0);
+      }
+    }
+    if ( sleeptime3 > 0 ) sleep4ms((unsigned int)(sleeptime3*1000));
+    loop_counter++;
+    if (loop_counter > 60000) loop_counter=1;
   }
 }
+

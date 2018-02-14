@@ -1,55 +1,54 @@
 // Define a valid radiochannel here
 #define RADIOCHANNEL 90
 // This node: Use octal numbers starting with "0": "041" is child 4 of node 1
-#define NODE 033
+#define NODE 02
 // Defaults for sleeptime1
-#define SLEEPTIME1 10
+#define SLEEPTIME1 60
 // Defaults for sleeptime2
-#define SLEEPTIME2 10
+#define SLEEPTIME2 60
 // Defaults for sleeptime3
 #define SLEEPTIME3 1
 // Defaults for sleeptime4
 #define SLEEPTIME4 2
 // The CE Pin of the Radio module
-#define RADIO_CE_PIN 10 
+#define RADIO_CE_PIN 10
 // The CS Pin of the Radio module
 #define RADIO_CSN_PIN 9
 // The pin of the statusled
-#define STATUSLED 8
-#define STATUSLED_ON LOW
-#define STATUSLED_OFF HIGH
+#define STATUSLED 7
+#define STATUSLED_ON HIGH
+#define STATUSLED_OFF LOW
 
 // The outputpin for batterycontrol for the voltagedivider
-#define VMESS_OUT 5
+#define VMESS_OUT 8
 // The inputpin for batterycontrol
 #define VMESS_IN A0
 // the divider to get the real voltage from ADC
 #define VOLTAGEDIVIDER 848
-#define VMESS_LICHT A2
-#define VMESS_SOLAR A1
-// How many cycles do we stay awake on network activity
-
-
 // ------ End of configuration part ------------
 
 #include <RF24Network.h>
 #include <RF24.h>
 #include <SPI.h>
 #include <sleeplib.h>
+#include <Wire.h>
+#include <BMP085.h>
 
 ISR(WDT_vect) { watchdogEvent(); }
+
+BMP085 bmp;
 
 // Structure of our payload
 struct payload_t
 {
   uint16_t orderno;
-  uint16_t seq; 
+  uint16_t seq;
   float value;
 };
 
-payload_t payload;    
+payload_t payload;
 
-enum radiomode_t { radio_sleep, radio_listen } radiomode;
+enum radiomode_t { radio_sleep, radio_listen } radiomode = radio_sleep;
 
 RF24NetworkHeader rxheader;
 RF24NetworkHeader txheader(0);
@@ -64,11 +63,10 @@ float sleeptime3 = SLEEPTIME3;
 float sleeptime4 = SLEEPTIME4;
 // The Voltagedivider - if you dont set it via channel 116 you will get the output of ADC
 float voltagedivider = VOLTAGEDIVIDER;
-float networkuptime = 0;
 // network got a message during this wakeup time
 bool network_has_message;
 // time in ms network was running without messages
-float network_freetime = 0;
+float network_freetime;
 
 unsigned int init_loop_counter = 0;
 boolean init_finished = false;
@@ -80,29 +78,15 @@ RF24 radio(RADIO_CE_PIN,RADIO_CSN_PIN);
 // Network uses that radio
 RF24Network network(radio);
 
-
 void action_loop(void) {
     network.read(rxheader,&payload,sizeof(payload));
     txheader.type=rxheader.type;
     switch (rxheader.type) {
       case 1:
-        //****
-        // insert here: payload.value=[result from sensor]
-        payload.value=read_solar(); 
+        payload.value=bmp.readTemperature();
        break;
       case 2:
-        //****
-        // insert here: payload.value=[result from sensor]
-        payload.value=read_licht(); 
-       break;
-      case 21:
-        //****
-        // insert here: action = payload.value
-        if ( payload.value > 0.5 ) {
-          digitalWrite(STATUSLED,STATUSLED_ON); 
-        } else {
-          digitalWrite(STATUSLED,STATUSLED_OFF); 
-        }
+        payload.value=pow(((95*0.0065)/(bmp.readTemperature()+273.15)+1),5.257)*bmp.readPressure()/100.0;
        break;
       case 101:
       // battery voltage
@@ -136,34 +120,35 @@ void action_loop(void) {
       // init_finished (=1)
         init_finished = ( payload.value > 0.5);
         break;
+//      default:
+      // Default: just send the paket back - no action here  
     }
     network.write(txheader,&payload,sizeof(payload));
 }
 
-
 void setup(void) {
-  pinMode(STATUSLED, OUTPUT);     
-  pinMode(VMESS_OUT, OUTPUT);  
+  pinMode(STATUSLED, OUTPUT);
+  pinMode(VMESS_OUT, OUTPUT);
   pinMode(VMESS_IN, INPUT);
   analogReference(INTERNAL);
+//  digitalWrite(STATUSLED,STATUSLED_ON);
   SPI.begin();
   //****
   // put anything else to init here
   //****
+  Wire.begin();
+  bmp.begin();
 
   //####
   // end aditional init
   //####
   radio.begin();
   radio.setPALevel(RF24_PA_MAX);
-  radio.setAutoAck(true);
-//  radio.setRetries(2,15);
+//  radio.setRetries(15,2);
   network.begin(RADIOCHANNEL, NODE);
   radio.setDataRate(RF24_250KBPS);
-  digitalWrite(STATUSLED,STATUSLED_ON);
-  // initialisation begins
-  init_transmit=true;
-  init_loop_counter=0;
+//  digitalWrite(STATUSLED,STATUSLED_ON);
+  // initialisation beginns
   while ( ! init_finished ) {
     if ( init_transmit ) {
       txheader.type=119;
@@ -178,49 +163,27 @@ void setup(void) {
       action_loop();
     }
     delay(100);
-    init_loop_counter++;
-    //just in case of initialisation does not work
-    //start with default values
+    init_loop_counter--;
+    //just in case of initialisation is interrupted
     if (init_loop_counter > 1000) init_finished=true;
   }
-  delay(500);
-  digitalWrite(STATUSLED,STATUSLED_OFF);
+  delay(100);
+//  digitalWrite(STATUSLED,STATUSLED_OFF);
 }
 
 float read_battery_voltage(void) {
   int vmess;
   float voltage;
   digitalWrite(VMESS_OUT, HIGH);
-  delay(500);
+  sleep4ms(250);
   vmess=analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
   vmess=vmess+analogRead(VMESS_IN);
+  digitalWrite(VMESS_OUT, LOW);
   voltage = vmess / (5 * voltagedivider);
   return voltage;  
-}
-
-float read_solar(void) {
-  int vmess;
-  float voltage;
-  vmess=analogRead(VMESS_SOLAR);
-  vmess=vmess+analogRead(VMESS_SOLAR);
-  vmess=vmess+analogRead(VMESS_SOLAR);
-  vmess=vmess+analogRead(VMESS_SOLAR);
-  vmess=vmess+analogRead(VMESS_SOLAR);
-  voltage = vmess / (5 * voltagedivider);
-  return voltage;  
-}
-
-float read_licht(void) {
-  int vmess;
-  vmess=analogRead(VMESS_LICHT);
-  vmess=vmess+analogRead(VMESS_LICHT);
-  vmess=vmess+analogRead(VMESS_LICHT);
-  vmess=vmess+analogRead(VMESS_LICHT);
-  vmess=vmess+analogRead(VMESS_LICHT);
-  return vmess / 5;
 }
 
 void loop(void) {
